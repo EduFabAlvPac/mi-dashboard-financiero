@@ -152,7 +152,7 @@
 
 <script>
 // URL de tu Apps Script
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyfIgrs1Hqijq8NvxsxIs2vPtH8a0rGTnEljgZmKT9RbqJUJtSwfRXEJVEPIdPAVFUR/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzbSvE00_dcrTnEmhPa5Csf4aQ5EXPe-huzpPtfphEzYONbItBlrgzr4JJ7xxdWAs_t/exec';
 
 // Variables globales
 let financialData = null;
@@ -183,12 +183,7 @@ async function loadFinancialData() {
     try {
         showLoadingState();
         
-        const response = await fetch(APPS_SCRIPT_URL, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            }
-        });
+        const response = await fetch(APPS_SCRIPT_URL);
         
         if (!response.ok) {
             throw new Error(`Error HTTP: ${response.status}`);
@@ -281,16 +276,24 @@ function calculateTotals(data) {
 
 // Función para actualizar las tarjetas de balance
 function updateBalanceCards(totals) {
-    document.getElementById('totalIncome').textContent = formatCurrency(totals.monthlyIncome);
-    document.getElementById('totalExpenses').textContent = formatCurrency(totals.monthlyExpenses);
-    document.getElementById('currentBalance').textContent = formatCurrency(totals.totalBalance);
-    document.getElementById('remainingBudget').textContent = formatCurrency(totals.remainingBudget);
+    const totalIncomeElem = document.getElementById('totalIncome');
+    const totalExpensesElem = document.getElementById('totalExpenses');
+    const currentBalanceElem = document.getElementById('currentBalance');
+    const remainingBudgetElem = document.getElementById('remainingBudget');
+    
+    if (totalIncomeElem) totalIncomeElem.textContent = formatCurrency(totals.monthlyIncome);
+    if (totalExpensesElem) totalExpensesElem.textContent = formatCurrency(totals.monthlyExpenses);
+    if (currentBalanceElem) currentBalanceElem.textContent = formatCurrency(totals.totalBalance);
+    if (remainingBudgetElem) remainingBudgetElem.textContent = formatCurrency(totals.remainingBudget);
 }
 
 // Función para actualizar lista de cuentas
 function updateAccountsList(accounts) {
     const container = document.getElementById('accountList');
-    if (!container) return;
+    if (!container) {
+        console.error('No se encontró el elemento accountList');
+        return;
+    }
     
     // Limpiar contenido existente
     container.innerHTML = '';
@@ -324,7 +327,10 @@ function updateAccountsList(accounts) {
 // Función para actualizar lista de obligaciones
 function updateObligationsList(obligations) {
     const container = document.getElementById('obligationList');
-    if (!container) return;
+    if (!container) {
+        console.error('No se encontró el elemento obligationList');
+        return;
+    }
     
     // Limpiar contenido existente
     container.innerHTML = '';
@@ -357,7 +363,10 @@ function updateObligationsList(obligations) {
 // Función para mostrar transacciones recientes
 function updateRecentTransactions(transactions) {
     const container = document.getElementById('transactionList');
-    if (!container) return;
+    if (!container) {
+        console.error('No se encontró el elemento transactionList');
+        return;
+    }
     
     // Ordenar por fecha más reciente
     const sortedTransactions = [...transactions].sort((a, b) => {
@@ -488,10 +497,21 @@ function hideOfflineMode() {
 function loadFallbackData() {
     console.log('Cargando datos de respaldo...');
     
+    // Datos de ejemplo para modo offline
     const fallbackData = {
-        accounts: [],
-        obligations: [],
-        transactions: [],
+        accounts: [
+            {name: "Bancolombia Ahorros", initialBalance: 5000000, date: "2025-09-15"},
+            {name: "Nequi", initialBalance: 1000000, date: "2025-09-15"}
+        ],
+        obligations: [
+            {id: "obl_1757907471644", name: "Visa Bancolombia", type: "Tarjeta de Crédito", limit: 10000000, paymentDay: 15},
+            {id: "obl_1757907500405", name: "MasterCard Davivienda", type: "Tarjeta de Crédito", limit: 8000000, paymentDay: 20}
+        ],
+        transactions: [
+            {type: "gasto", amount: 350000, description: "Supermercado Éxito", category: "Alimentación", subcategory: "Mercado", account: "Nequi", date: "2025-09-15", EsTransferencia: ""},
+            {type: "gasto", amount: 120000, description: "Mensualidad Gym", category: "Personales", subcategory: "Gimnasio", account: "Visa Bancolombia", date: "2025-09-15", EsTransferencia: ""},
+            {type: "ingreso", amount: 4000000, description: "Pago Nómina", category: "Salario", subcategory: "", account: "Bancolombia Ahorros", date: "2025-09-15", EsTransferencia: ""}
+        ],
         status: "offline"
     };
     
@@ -561,16 +581,45 @@ function selectCategory(category) {
 // Configurar botones de tipo de transacción
 function setupTransactionTypeButtons() {
     const buttons = document.querySelectorAll('.transaction-type-buttons .btn');
+    if (!buttons.length) return;
+    
     buttons.forEach(button => {
         button.addEventListener('click', function() {
             buttons.forEach(btn => btn.classList.remove('active'));
             this.classList.add('active');
             
-            const isTransfer = this.dataset.type === 'transferencia';
-            document.getElementById('standard-form-fields').style.display = isTransfer ? 'none' : 'block';
-            document.getElementById('transfer-form-fields').style.display = isTransfer ? 'block' : 'none';
+            // Aquí puedes agregar lógica adicional para cambiar entre formularios
+            // si es necesario (gasto/ingreso/transferencia)
         });
     });
+}
+
+// Configurar envío de formularios
+function setupFormHandlers() {
+    const transactionForm = document.getElementById('transactionForm');
+    const accountForm = document.getElementById('accountForm');
+    const obligationForm = document.getElementById('obligationForm');
+    
+    if (transactionForm) {
+        transactionForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            alert('Función de agregar transacción en desarrollo.');
+        });
+    }
+    
+    if (accountForm) {
+        accountForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            alert('Función de agregar cuenta en desarrollo.');
+        });
+    }
+    
+    if (obligationForm) {
+        obligationForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            alert('Función de agregar obligación en desarrollo.');
+        });
+    }
 }
 
 // Función de inicialización
@@ -580,9 +629,13 @@ function initializeApp() {
     // Inicializar componentes
     initializeCategories();
     setupTransactionTypeButtons();
+    setupFormHandlers();
     
     // Establecer fecha actual por defecto
-    document.getElementById('date').valueAsDate = new Date();
+    const dateInput = document.getElementById('date');
+    if (dateInput) {
+        dateInput.valueAsDate = new Date();
+    }
     
     // Cargar datos al inicio
     loadFinancialData();
@@ -593,17 +646,14 @@ function initializeApp() {
     console.log('Aplicación inicializada correctamente');
 }
 
-// Event Listeners
-document.addEventListener('DOMContentLoaded', initializeApp);
-
-// Si el DOM ya está cargado
+// Iniciar la aplicación cuando el DOM esté listo
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeApp);
 } else {
     initializeApp();
 }
 
-// Funciones de los botones de acción rápida (placeholders)
+// Funciones de los botones de acción rápida
 function setMonthlyBudget() {
     const budget = prompt('Ingresa tu presupuesto mensual:');
     if (budget !== null && !isNaN(parseFloat(budget))) {
