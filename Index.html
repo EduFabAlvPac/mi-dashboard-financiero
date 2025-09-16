@@ -180,6 +180,36 @@ const categories = {
     }
 };
 
+// --- ¡NUEVA FUNCIÓN PARA ENVIAR DATOS! ---
+async function sendDataToSheet(action, data) {
+    if (isLoading) return;
+    isLoading = true;
+    showLoadingState();
+
+    try {
+        const response = await fetch(APPS_SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: action, data: data }),
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8', // Apps Script a veces prefiere text/plain para POST
+            },
+        });
+
+        // La respuesta de un POST de Apps Script puede ser opaca, 
+        // pero lo importante es que se ejecutó. Recargamos los datos para ver los cambios.
+        console.log(`Acción '${action}' enviada. Recargando datos...`);
+        loadFinancialData(); // ¡Clave! Refresca la interfaz con los nuevos datos.
+
+    } catch (error) {
+        console.error('Error al enviar datos:', error);
+        alert(`Hubo un error al guardar los datos. Por favor, revisa tu conexión e inténtalo de nuevo.`);
+    } finally {
+        isLoading = false;
+        // hideLoadingState() se llamará al final de loadFinancialData()
+    }
+}
+
+
 // Función principal para cargar datos
 async function loadFinancialData() {
     if (isLoading) return;
@@ -490,253 +520,7 @@ function updateRecentTransactions(transactions) {
         const transactionElement = document.createElement('li');
         transactionElement.className = `transaction-item ${transaction.type === 'ingreso' ? 'income' : 'expense'}`;
         
-        const amount = parseFloat(transaction.amount) || 0;
-        const amountClass = transaction.type === 'ingreso' ? 'amount-income' : 'amount-expense';
-        
-        transactionElement.innerHTML = `
-            <div class="transaction-info">
-                <h4>${escapeHtml(transaction.description || 'Sin descripción')}</h4>
-                <p>${escapeHtml(transaction.category || '')} ${transaction.subcategory ? '- ' + escapeHtml(transaction.subcategory) : ''} | ${escapeHtml(transaction.account || '')}</p>
-                <small>${formatDate(transaction.date)}</small>
-            </div>
-            <div class="transaction-amount ${amountClass}">
-                ${transaction.type === 'ingreso' ? '+' : '-'}${formatCurrency(Math.abs(amount))}
-            </div>
-        `;
-        
-        container.appendChild(transactionElement);
-    });
-}
-
-// Función para actualizar los dropdowns de cuentas
-function updateAccountDropdowns(accounts, obligations) {
-    const accountDropdown = document.getElementById('account');
-    const transferFromDropdown = document.getElementById('transferFrom');
-    const transferToDropdown = document.getElementById('transferTo');
-    
-    if (!accountDropdown || !transferFromDropdown || !transferToDropdown) return;
-    
-    // Limpiar dropdowns
-    accountDropdown.innerHTML = '<option value="">Seleccionar...</option>';
-    transferFromDropdown.innerHTML = '<option value="">Seleccionar...</option>';
-    transferToDropdown.innerHTML = '<option value="">Seleccionar...</option>';
-    
-    // Agregar cuentas a los dropdowns
-    if (accounts && Array.isArray(accounts)) {
-        accounts.forEach(account => {
-            const option = document.createElement('option');
-            option.value = account.name;
-            option.textContent = account.name;
-            
-            accountDropdown.appendChild(option.cloneNode(true));
-            transferFromDropdown.appendChild(option.cloneNode(true));
-        });
-    }
-    
-    // Agregar obligaciones al dropdown de transferencia
-    if (obligations && Array.isArray(obligations)) {
-        obligations.forEach(obligation => {
-            const option = document.createElement('option');
-            option.value = obligation.name;
-            option.textContent = obligation.name;
-            
-            accountDropdown.appendChild(option.cloneNode(true));
-            transferToDropdown.appendChild(option.cloneNode(true));
-        });
-    }
-}
-
-// Funciones auxiliares
-function formatCurrency(amount) {
-    const number = parseFloat(amount) || 0;
-    return new Intl.NumberFormat('es-CO', {
-        style: 'currency',
-        currency: 'COP',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-    }).format(number);
-}
-
-function formatDate(dateString) {
-    try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('es-CO', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric'
-        });
-    } catch (error) {
-        return dateString;
-    }
-}
-
-function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// Funciones de estado de la aplicación
-function showLoadingState() {
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    if (loadingOverlay) loadingOverlay.style.display = 'flex';
-}
-
-function hideLoadingState() {
-    const loadingOverlay = document.getElementById('loadingOverlay');
-    if (loadingOverlay) loadingOverlay.style.display = 'none';
-}
-
-function showOfflineMode() {
-    const offlineMode = document.getElementById('offlineMode');
-    if (offlineMode) offlineMode.style.display = 'block';
-}
-
-function hideOfflineMode() {
-    const offlineMode = document.getElementById('offlineMode');
-    if (offlineMode) offlineMode.style.display = 'none';
-}
-
-// SOLUCIÓN AL ERROR: Función loadFallbackData definida correctamente
-function loadFallbackData() {
-    console.log('Cargando datos de respaldo...');
-    
-    // Datos de ejemplo para modo offline
-    const fallbackData = {
-        accounts: [
-            {name: "Bancolombia Ahorros", initialBalance: 5000000, date: "2025-09-15"},
-            {name: "Nequi", initialBalance: 1000000, date: "2025-09-15"}
-        ],
-        obligations: [
-            {id: "obl_1757907471644", name: "Visa Bancolombia", type: "Tarjeta de Crédito", limit: 10000000, paymentDay: 15},
-            {id: "obl_1757907500405", name: "MasterCard Davivienda", type: "Tarjeta de Crédito", limit: 8000000, paymentDay: 20}
-        ],
-        transactions: [
-            {type: "gasto", amount: 350000, description: "Supermercado Éxito", category: "Alimentación", subcategory: "Mercado", account: "Nequi", date: "2025-09-15", EsTransferencia: ""},
-            {type: "gasto", amount: 120000, description: "Mensualidad Gym", category: "Personales", subcategory: "Gimnasio", account: "Visa Bancolombia", date: "2025-09-15", EsTransferencia: ""},
-            {type: "ingreso", amount: 4000000, description: "Pago Nómina", category: "Salario", subcategory: "", account: "Bancolombia Ahorros", date: "2025-09-15", EsTransferencia: ""}
-        ],
-        status: "offline"
-    };
-    
-    updateInterface(fallbackData);
-}
-
-// Función para reintentar carga
-function retryLoadData() {
-    console.log('Reintentando cargar datos...');
-    loadFinancialData();
-}
-
-// Inicializar categorías según el tipo de transacción
-function initializeCategories() {
-    const categoryContainer = document.getElementById('categoryContainer');
-    if (!categoryContainer) return;
-    
-    categoryContainer.innerHTML = '';
-    
-    const transactionType = currentTransactionType;
-    const transactionCategories = categories[transactionType] || {};
-    
-    Object.keys(transactionCategories).forEach(category => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'category-btn';
-        button.textContent = category;
-        button.addEventListener('click', () => selectCategory(category, transactionType));
-        categoryContainer.appendChild(button);
-    });
-}
-
-// Seleccionar categoría
-function selectCategory(category, type) {
-    // Remover selección anterior
-    document.querySelectorAll('.category-btn').forEach(btn => {
-        btn.classList.remove('selected');
-    });
-    
-    // Marcar como seleccionado
-    const selectedBtn = Array.from(document.querySelectorAll('.category-btn')).find(btn => btn.textContent === category);
-    if (selectedBtn) selectedBtn.classList.add('selected');
-    
-    // Mostrar subcategorías si existen
-    const subcategoryGroup = document.getElementById('subcategoryGroup');
-    const subcategoryContainer = document.getElementById('subcategoryContainer');
-    
-    if (categories[type][category] && categories[type][category].length > 0) {
-        subcategoryGroup.style.display = 'block';
-        subcategoryContainer.innerHTML = '';
-        
-        categories[type][category].forEach(subcat => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'subcategory-btn';
-            button.textContent = subcat;
-            button.addEventListener('click', () => {
-                document.querySelectorAll('.subcategory-btn').forEach(btn => {
-                    btn.classList.remove('selected');
-                });
-                button.classList.add('selected');
-            });
-            subcategoryContainer.appendChild(button);
-        });
-    } else {
-        subcategoryGroup.style.display = 'none';
-    }
-}
-
-// Configurar botones de tipo de transacción
-function setupTransactionTypeButtons() {
-    const buttons = document.querySelectorAll('.transaction-type-buttons .btn');
-    if (!buttons.length) return;
-    
-    buttons.forEach(button => {
-        button.addEventListener('click', function() {
-            buttons.forEach(btn => btn.classList.remove('active'));
-            this.classList.add('active');
-            
-            // Actualizar el tipo de transacción actual
-            currentTransactionType = this.dataset.type;
-            
-            // Actualizar categorías según el tipo seleccionado
-            initializeCategories();
-            
-            // Ocultar campos de subcategoría al cambiar tipo
-            document.getElementById('subcategoryGroup').style.display = 'none';
-        });
-    });
-}
-
-// Configurar envío de formularios
-function setupFormHandlers() {
-    // Formulario de transacción
-    const transactionForm = document.getElementById('transactionForm');
-    if (transactionForm) {
-        transactionForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            addTransaction();
-        });
-    }
-    
-    // Formulario de cuenta
-    const accountForm = document.getElementById('accountForm');
-    if (accountForm) {
-        accountForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            addAccount();
-        });
-    }
-    
-    // Formulario de obligación
-    const obligationForm = document.getElementById('obligationForm');
-    if (obligationForm) {
-        obligationForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            addObligation();
-        });
-    }
-}
+        const amount = parseFloat(transaction.amount) VERSIÓN MODIFICADA
 
 // Función para agregar transacción
 function addTransaction() {
@@ -745,40 +529,21 @@ function addTransaction() {
     const account = document.getElementById('account').value;
     const date = document.getElementById('date').value;
     
-    // Validaciones básicas
-    if (!amount || amount <= 0) {
-        alert('Por favor ingresa un monto válido');
+    if (!amount || amount <= 0 || !description || !account || !date) {
+        alert('Por favor, completa todos los campos.');
         return;
     }
     
-    if (!description) {
-        alert('Por favor ingresa una descripción');
-        return;
-    }
-    
-    if (!account) {
-        alert('Por favor selecciona una cuenta');
-        return;
-    }
-    
-    if (!date) {
-        alert('Por favor selecciona una fecha');
-        return;
-    }
-    
-    // Obtener categoría y subcategoría seleccionadas
     const selectedCategory = document.querySelector('.category-btn.selected');
-    const selectedSubcategory = document.querySelector('.subcategory-btn.selected');
-    
     const category = selectedCategory ? selectedCategory.textContent : '';
-    const subcategory = selectedSubcategory ? selectedSubcategory.textContent : '';
-    
     if (!category) {
         alert('Por favor selecciona una categoría');
         return;
     }
     
-    // Crear objeto de transacción
+    const selectedSubcategory = document.querySelector('.subcategory-btn.selected');
+    const subcategory = selectedSubcategory ? selectedSubcategory.textContent : '';
+
     const transaction = {
         type: currentTransactionType,
         amount: amount,
@@ -790,8 +555,8 @@ function addTransaction() {
         EsTransferencia: document.getElementById('transfer-form-fields').style.display === 'block' ? 'sí' : ''
     };
     
-    console.log('Transacción a agregar:', transaction);
-    alert(`Transacción de ${currentTransactionType} agregada correctamente por ${formatCurrency(amount)}`);
+    // ENVIAR DATOS A GOOGLE SHEETS
+    sendDataToSheet('addTransaction', transaction);
     
     // Limpiar formulario
     document.getElementById('transactionForm').reset();
@@ -800,11 +565,9 @@ function addTransaction() {
     document.querySelectorAll('.category-btn.selected, .subcategory-btn.selected').forEach(btn => {
         btn.classList.remove('selected');
     });
-    
-    // Recargar datos para actualizar la interfaz
-    loadFinancialData();
 }
 
+// VERSIÓN MODIFICADA
 // Función para agregar cuenta
 function addAccount() {
     const name = document.getElementById('newAccountName').value;
@@ -815,23 +578,20 @@ function addAccount() {
         return;
     }
     
-    // Crear objeto de cuenta
     const account = {
         name: name,
         initialBalance: initialBalance,
         date: new Date().toISOString().split('T')[0]
     };
     
-    console.log('Cuenta a agregar:', account);
-    alert(`Cuenta "${name}" agregada correctamente con saldo inicial de ${formatCurrency(initialBalance)}`);
+    // ENVIAR DATOS A GOOGLE SHEETS
+    sendDataToSheet('addAccount', account);
     
     // Limpiar formulario
     document.getElementById('accountForm').reset();
-    
-    // Recargar datos para actualizar la interfaz
-    loadFinancialData();
 }
 
+// VERSIÓN MODIFICADA
 // Función para agregar obligación
 function addObligation() {
     const name = document.getElementById('obligationName').value;
@@ -839,22 +599,11 @@ function addObligation() {
     const limit = parseFloat(document.getElementById('creditLimit').value);
     const paymentDay = parseInt(document.getElementById('paymentDay').value);
     
-    if (!name) {
-        alert('Por favor ingresa un nombre para la obligación');
+    if (!name || !limit || limit <= 0 || !paymentDay || paymentDay < 1 || paymentDay > 31) {
+        alert('Por favor, completa todos los campos con valores válidos.');
         return;
     }
     
-    if (!limit || limit <= 0) {
-        alert('Por favor ingresa un límite válido');
-        return;
-    }
-    
-    if (!paymentDay || paymentDay < 1 || paymentDay > 31) {
-        alert('Por favor ingresa un día de pago válido (1-31)');
-        return;
-    }
-    
-    // Crear objeto de obligación
     const obligation = {
         id: 'obl_' + Date.now(),
         name: name,
@@ -863,14 +612,11 @@ function addObligation() {
         paymentDay: paymentDay
     };
     
-    console.log('Obligación a agregar:', obligation);
-    alert(`Obligación "${name}" agregada correctamente con límite de ${formatCurrency(limit)}`);
+    // ENVIAR DATOS A GOOGLE SHEETS
+    sendDataToSheet('addObligation', obligation);
     
     // Limpiar formulario
     document.getElementById('obligationForm').reset();
-    
-    // Recargar datos para actualizar la interfaz
-    loadFinancialData();
 }
 
 // Función de inicialización
