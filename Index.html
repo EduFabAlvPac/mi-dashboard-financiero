@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Financiero Pro</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-color: #5d5dff;
+            --secondary-color: #6a6aff;
+            --background-light: #f4f6f8;
+            --card-background: #ffffff;
+            --text-dark: #333333;
+            --text-light: #666666;
+            --income-color: #4CAF50;
+            --expense-color: #FF7043;
+            --debt-color: #ff4d4d;
+            --border-color: #e0e0e0;
+            --box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            --border-radius: 12px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--background-light); color: var(--text-dark); padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; background: var(--card-background); border-radius: 24px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15); overflow: hidden; padding: 40px; }
+        .header { text-align: center; margin-bottom: 40px; }
+        .header h1 { font-size: 2.8rem; color: var(--primary-color); margin-bottom: 10px; }
+        .header p { font-size: 1.2rem; color: var(--text-light); min-height: 22px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 25px; margin-bottom: 30px; }
+        .stat-card { background: var(--card-background); padding: 25px; border-radius: var(--border-radius); box-shadow: var(--box-shadow); transition: transform 0.3s ease, box-shadow 0.3s ease; border-left: 5px solid; }
+        .stat-card:hover { transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); }
+        .stat-card.income { border-color: var(--income-color); }
+        .stat-card.expenses { border-color: var(--expense-color); }
+        .stat-card.balance { border-color: var(--primary-color); }
+        .stat-card.budget { border-color: #f39c12; }
+        .stat-label { font-size: 0.9rem; font-weight: 600; text-transform: uppercase; color: var(--text-light); margin-bottom: 8px; }
+        .stat-value { font-size: 2.2rem; font-weight: 700; color: var(--text-dark); }
+        .main-content-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 30px; margin-bottom: 10px; }
+        .panel { background: var(--card-background); border-radius: var(--border-radius); padding: 30px; box-shadow: var(--box-shadow); margin-bottom: 30px; }
+        .panel h3 { color: var(--text-dark); margin-bottom: 20px; font-size: 1.5rem; border-bottom: 2px solid var(--border-color); padding-bottom: 10px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; font-weight: 600; color: var(--text-dark); }
+        .form-group input, .form-group select { width: 100%; padding: 12px 15px; border: 1px solid var(--border-color); background: var(--background-light); border-radius: 8px; font-size: 1rem; color: var(--text-dark); }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(93, 93, 255, 0.1); }
+        .btn { background: var(--primary-color); color: white; border: none; padding: 12px 25px; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; text-transform: uppercase; width: 100%; }
+        .btn:hover { background: var(--secondary-color); transform: translateY(-2px); box-shadow: 0 8px 20px rgba(93, 93, 255, 0.3); }
+        .transaction-type-buttons { display: flex; gap: 10px; }
+        .transaction-type-buttons .btn { flex: 1; background: var(--background-light); color: var(--text-light); border: 1px solid var(--border-color); }
+        .transaction-type-buttons .btn.active.income { background: var(--income-color); color: white; border-color: var(--income-color); }
+        .transaction-type-buttons .btn.active.expense { background: var(--expense-color); color: white; border-color: var(--expense-color); }
+        .categories-container, .subcategories-container { display: flex; flex-wrap: wrap; gap: 8px; }
+        .category-btn, .subcategory-btn { padding: 8px 15px; border-radius: 20px; border: 1px solid var(--border-color); background: var(--background-light); color: var(--text-light); cursor: pointer; transition: all 0.2s ease; font-size: 0.9rem; }
+        .category-btn.selected, .subcategory-btn.selected { background: var(--primary-color); color: white; border-color: var(--primary-color); }
+        .transaction-list, .account-list { max-height: 300px; overflow-y: auto; margin-top: 20px; list-style: none; }
+        .transaction-item, .account-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; margin-bottom: 10px; background: var(--background-light); border-radius: 10px; border-left: 4px solid; }
+        .transaction-item.income { border-left-color: var(--income-color); }
+        .transaction-item.expense { border-left-color: var(--expense-color); }
+        .account-item { border-left-color: var(--primary-color); }
+        .transaction-info h4, .account-name { margin: 0; color: var(--text-dark); font-size: 1rem; font-weight: 600; }
+        .transaction-info p { margin: 5px 0 0 0; color: var(--text-light); font-size: 0.85rem; }
+        .transaction-amount, .account-balance { font-weight: 700; font-size: 1.1rem; }
+        .amount-income { color: var(--income-color); }
+        .amount-expense { color: var(--expense-color); }
+        .amount-debt { color: var(--debt-color); }
+        .delete-btn { background: none; border: none; color: var(--expense-color); cursor: pointer; font-size: 1.2rem; opacity: 0.7; transition: opacity 0.2s ease; margin-left: 10px; }
+        .delete-btn:hover { opacity: 1; }
+        .chart-container { width: 100%; height: 400px; }
+        .quick-actions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-top: 10px; }
+        .quick-action-btn { background: var(--primary-color); color: white; padding: 20px; border-radius: 12px; text-align: center; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; text-decoration: none; }
+        .quick-action-btn:hover { transform: translateY(-3px); background: var(--secondary-color); box-shadow: 0 10px 25px rgba(93, 93, 255, 0.3); }
+        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .offline-mode { background: #ffecb3; padding: 10px; border-radius: 5px; margin-bottom: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+            <div style="text-align: center;">
+                <div style="font-size: 24px; margin-bottom: 10px;">Cargando datos...</div>
+                <div style="width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #5d5dff; border-radius: 50%; margin: 0 auto; animation: spin 1s linear infinite;"></div>
+            </div>
+        </div>
+        
+        <div class="offline-mode" id="offlineMode" style="display: none;">
+            <p>Estás en modo offline. Los datos pueden no estar actualizados.</p>
+            <button class="btn" onclick="retryLoadData()" style="background: var(--expense-color); width: auto; margin-top: 10px;">Reintentar conexión</button>
+        </div>
+        
+        <div class="header">
+            <h1>Finanzas Personales Pro</h1>
+            <p id="app-subtitle">Control financiero intuitivo y elegante</p>
+        </div>
+        <div class="stats-grid">
+            <div class="stat-card income"><div class="stat-label">Ingresos del Mes</div><div class="stat-value" id="totalIncome">$0</div></div>
+            <div class="stat-card expenses"><div class="stat-label">Gastos del Mes</div><div class="stat-value" id="totalExpenses">$0</div></div>
+            <div class="stat-card balance"><div class="stat-label">Balance Total</div><div class="stat-value" id="currentBalance">$0</div></div>
+            <div class="stat-card budget"><div class="stat-label">Presupuesto Restante</div><div class="stat-value" id="remainingBudget">$0</div></div>
+        </div>
+        <div class="main-content-grid">
+            <div class="panel">
+                <h3>Registrar Transacción</h3>
+                <form id="transactionForm">
+                    <div class="form-group"><label>Tipo</label><div class="transaction-type-buttons"><button type="button" class="btn active expense" data-type="gasto">Gasto</button><button type="button" class="btn income" data-type="ingreso">Ingreso</button></div></div>
+                    <div class="form-group"><label>Categoría</label><div id="categoryContainer" class="categories-container"></div></div>
+                    <div class="form-group" id="subcategoryGroup" style="display: none;"><label>Subcategoría</label><div id="subcategoryContainer" class="subcategories-container"></div></div>
+                    <div class="form-group"><label for="amount">Monto</label><input type="number" id="amount" step="0.01" placeholder="0.00" required></div>
+                    
+                    <div id="standard-form-fields">
+                        <div class="form-group"><label for="description">Descripción</label><input type="text" id="description" placeholder="Ej: Supermercado" required></div>
+                        <div class="form-group"><label for="account">Cuenta / Tarjeta de Crédito</label><select id="account" required><option value="">Seleccionar...</option></select></div>
+                    </div>
+
+                    <div id="transfer-form-fields" style="display: none;">
+                        <div class="form-group"><label for="transferFrom">Pagar Desde la Cuenta</label><select id="transferFrom" required></select></div>
+                        <div class="form-group"><label for="transferTo">Pagar a la Tarjeta</label><select id="transferTo" required></select></div>
+                    </div>
+
+                    <div class="form-group"><label for="date">Fecha</label><input type="date" id="date" required></div>
+                    <button type="submit" class="btn">Agregar Transacción</button>
+                </form>
+            </div>
+            <div class="panel">
+                <h3>Mis Cuentas</h3>
+                <form id="accountForm">
+                    <div class="form-group"><label for="newAccountName">Nombre de la Cuenta</label><input type="text" id="newAccountName" placeholder="Ej: Cuenta de Ahorros" required></div>
+                    <div class="form-group"><label for="initialBalance">Saldo Inicial ($)</label><input type="number" id="initialBalance" step="0.01" placeholder="0.00"></div>
+                    <button type="submit" class="btn" style="background: var(--income-color);">Agregar Cuenta</button>
+                </form>
+                <ul id="accountList" class="account-list"></ul>
+            </div>
+            <div class="panel">
+                <h3>Obligaciones Crediticias</h3>
+                <form id="obligationForm">
+                    <div class="form-group"><label for="obligationName">Nombre de la Obligación</label><input type="text" id="obligationName" placeholder="Ej: Tarjeta Visa" required></div>
+                    <div class="form-group"><label for="obligationType">Tipo</label><select id="obligationType" required><option value="Tarjeta de Crédito">Tarjeta de Crédito</option><option value="Crédito de Consumo">Crédito de Consumo</option></select></div>
+                    <div class="form-group"><label for="creditLimit">Monto / Límite de Crédito ($)</label><input type="number" id="creditLimit" step="0.01" placeholder="5000000" required></div>
+                    <div class="form-group"><label for="paymentDay">Día Límite de Pago (del mes)</label><input type="number" id="paymentDay" min="1" max="31" placeholder="15" required></div>
+                    <button type="submit" class="btn">Agregar Obligación</button>
+                </form>
+                <ul id="obligationList" class="account-list"></ul>
+            </div>
+        </div>
+        <div class="panel"><h3>Comportamiento Financiero</h3><div class="chart-container"><canvas id="monthlyChart"></canvas></div></div>
+        <div class="panel"><h3>Transacciones Recientes</h3><div class="transaction-list" id="transactionList"></div></div>
+        <div class="quick-actions-grid">
+            <div class="quick-action-btn" onclick="setMonthlyBudget()">Establecer Presupuesto</div>
+            <div class="quick-action-btn" onclick="generateReport()">Generar Reporte</div>
+            <div class="quick-action-btn" onclick="exportData()">Exportar Datos</div>
+            <div class="quick-action-btn" onclick="clearAllData()">Limpiar Datos</div>
+        </div>
+    </div>
+
+<script>
+// URL de tu Apps Script
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyfIgrs1Hqijq8NvxsxIs2vPtH8a0rGTnEljgZmKT9RbqJUJtSwfRXEJVEPIdPAVFUR/exec';
+
+// Variables globales
+let financialData = null;
+let isLoading = false;
+
+// Categorías predefinidas
+const categories = {
+    'Alimentación': ['Supermercado', 'Restaurantes', 'Comida rápida'],
+    'Transporte': ['Gasolina', 'Transporte público', 'Mantenimiento'],
+    'Entretenimiento': ['Cine', 'Streaming', 'Eventos'],
+    'Personales': ['Ropa', 'Cuidado personal', 'Gimnasio'],
+    'Salud': ['Medicamentos', 'Consultas médicas', 'Seguro'],
+    'Hogar': ['Arriendo', 'Servicios', 'Mantenimiento'],
+    'Educación': ['Cursos', 'Libros', 'Matrículas'],
+    'Créditos': ['Pago Tarjeta', 'Préstamos'],
+    'Salario': ['Nómina', 'Freelance', 'Bonos'],
+    'Inversiones': ['Dividendos', 'Intereses'],
+    'Otros': ['Regalos', 'Donaciones']
+};
+
+// Función principal para cargar datos
+async function loadFinancialData() {
+    if (isLoading) return;
+    
+    isLoading = true;
+    console.log('Cargando datos financieros...');
+    
+    try {
+        showLoadingState();
+        
+        const response = await fetch(APPS_SCRIPT_URL, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Error HTTP: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            financialData = data;
+            console.log('Datos cargados exitosamente:', data);
+            updateInterface(data);
+            hideOfflineMode();
+        } else {
+            throw new Error(data.message || 'Error en los datos recibidos');
+        }
+        
+    } catch (error) {
+        console.error('Error cargando datos:', error);
+        showOfflineMode();
+        loadFallbackData();
+    } finally {
+        isLoading = false;
+        hideLoadingState();
+    }
+}
+
+// Función para actualizar toda la interfaz
+function updateInterface(data) {
+    console.log('Actualizando interfaz con datos:', data);
+    
+    // Calcular totales
+    const totals = calculateTotals(data);
+    
+    // Actualizar elementos principales
+    updateBalanceCards(totals);
+    updateAccountsList(data.accounts);
+    updateObligationsList(data.obligations);
+    updateRecentTransactions(data.transactions);
+    updateAccountDropdowns(data.accounts, data.obligations);
+    
+    console.log('Interfaz actualizada correctamente');
+}
+
+// Función para calcular totales
+function calculateTotals(data) {
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth();
+    const currentYear = currentDate.getFullYear();
+    
+    let totalBalance = 0;
+    let monthlyIncome = 0;
+    let monthlyExpenses = 0;
+    
+    // Calcular balance total de cuentas
+    if (data.accounts && Array.isArray(data.accounts)) {
+        data.accounts.forEach(account => {
+            const balance = parseFloat(account.initialBalance) || 0;
+            totalBalance += balance;
+        });
+    }
+    
+    // Calcular ingresos y gastos del mes actual
+    if (data.transactions && Array.isArray(data.transactions)) {
+        data.transactions.forEach(transaction => {
+            try {
+                const transactionDate = new Date(transaction.date);
+                if (transactionDate.getMonth() === currentMonth && 
+                    transactionDate.getFullYear() === currentYear) {
+                    
+                    const amount = parseFloat(transaction.amount) || 0;
+                    if (transaction.type === 'ingreso') {
+                        monthlyIncome += amount;
+                    } else if (transaction.type === 'gasto') {
+                        monthlyExpenses += amount;
+                    }
+                }
+            } catch (error) {
+                console.warn('Error procesando transacción:', transaction, error);
+            }
+        });
+    }
+    
+    return {
+        totalBalance,
+        monthlyIncome,
+        monthlyExpenses,
+        remainingBudget: monthlyIncome - monthlyExpenses
+    };
+}
+
+// Función para actualizar las tarjetas de balance
+function updateBalanceCards(totals) {
+    document.getElementById('totalIncome').textContent = formatCurrency(totals.monthlyIncome);
+    document.getElementById('totalExpenses').textContent = formatCurrency(totals.monthlyExpenses);
+    document.getElementById('currentBalance').textContent = formatCurrency(totals.totalBalance);
+    document.getElementById('remainingBudget').textContent = formatCurrency(totals.remainingBudget);
+}
+
+// Función para actualizar lista de cuentas
+function updateAccountsList(accounts) {
+    const container = document.getElementById('accountList');
+    if (!container) return;
+    
+    // Limpiar contenido existente
+    container.innerHTML = '';
+    
+    // Si no hay cuentas, mostrar mensaje
+    if (!accounts || accounts.length === 0) {
+        container.innerHTML = '<li class="account-item">No hay cuentas registradas.</li>';
+        return;
+    }
+    
+    // Crear elementos de cuenta
+    accounts.forEach(account => {
+        const accountElement = document.createElement('li');
+        accountElement.className = 'account-item';
+        
+        const balance = parseFloat(account.initialBalance) || 0;
+        const balanceClass = balance < 0 ? 'amount-debt' : '';
+        
+        accountElement.innerHTML = `
+            <div class="account-info">
+                <h4 class="account-name">${escapeHtml(account.name || 'Sin nombre')}</h4>
+                <p>Saldo inicial: ${formatDate(account.date)}</p>
+            </div>
+            <div class="account-balance ${balanceClass}">${formatCurrency(balance)}</div>
+        `;
+        
+        container.appendChild(accountElement);
+    });
+}
+
+// Función para actualizar lista de obligaciones
+function updateObligationsList(obligations) {
+    const container = document.getElementById('obligationList');
+    if (!container) return;
+    
+    // Limpiar contenido existente
+    container.innerHTML = '';
+    
+    // Si no hay obligaciones, mostrar mensaje
+    if (!obligations || obligations.length === 0) {
+        container.innerHTML = '<li class="account-item">No hay obligaciones registradas.</li>';
+        return;
+    }
+    
+    // Crear elementos de obligación
+    obligations.forEach(obligation => {
+        const obligationElement = document.createElement('li');
+        obligationElement.className = 'account-item';
+        
+        const limit = parseFloat(obligation.limit) || 0;
+        
+        obligationElement.innerHTML = `
+            <div class="account-info">
+                <h4 class="account-name">${escapeHtml(obligation.name || 'Sin nombre')}</h4>
+                <p>${obligation.type} - Día de pago: ${obligation.paymentDay}</p>
+            </div>
+            <div class="account-balance">${formatCurrency(limit)}</div>
+        `;
+        
+        container.appendChild(obligationElement);
+    });
+}
+
+// Función para mostrar transacciones recientes
+function updateRecentTransactions(transactions) {
+    const container = document.getElementById('transactionList');
+    if (!container) return;
+    
+    // Ordenar por fecha más reciente
+    const sortedTransactions = [...transactions].sort((a, b) => {
+        return new Date(b.date) - new Date(a.date);
+    });
+    
+    // Mostrar solo las 5 más recientes
+    const recentTransactions = sortedTransactions.slice(0, 5);
+    
+    container.innerHTML = '';
+    
+    if (!recentTransactions || recentTransactions.length === 0) {
+        container.innerHTML = '<li class="transaction-item">No hay transacciones registradas.</li>';
+        return;
+    }
+    
+    recentTransactions.forEach(transaction => {
+        const transactionElement = document.createElement('li');
+        transactionElement.className = `transaction-item ${transaction.type === 'ingreso' ? 'income' : 'expense'}`;
+        
+        const amount = parseFloat(transaction.amount) || 0;
+        const amountClass = transaction.type === 'ingreso' ? 'amount-income' : 'amount-expense';
+        
+        transactionElement.innerHTML = `
+            <div class="transaction-info">
+                <h4>${escapeHtml(transaction.description || 'Sin descripción')}</h4>
+                <p>${escapeHtml(transaction.category || '')} ${transaction.subcategory ? '- ' + escapeHtml(transaction.subcategory) : ''} | ${escapeHtml(transaction.account || '')}</p>
+            </div>
+            <div class="transaction-amount ${amountClass}">
+                ${transaction.type === 'ingreso' ? '+' : '-'}${formatCurrency(Math.abs(amount))}
+            </div>
+        `;
+        
+        container.appendChild(transactionElement);
+    });
+}
+
+// Función para actualizar los dropdowns de cuentas
+function updateAccountDropdowns(accounts, obligations) {
+    const accountDropdown = document.getElementById('account');
+    const transferFromDropdown = document.getElementById('transferFrom');
+    const transferToDropdown = document.getElementById('transferTo');
+    
+    if (!accountDropdown || !transferFromDropdown || !transferToDropdown) return;
+    
+    // Limpiar dropdowns
+    accountDropdown.innerHTML = '<option value="">Seleccionar...</option>';
+    transferFromDropdown.innerHTML = '<option value="">Seleccionar...</option>';
+    transferToDropdown.innerHTML = '<option value="">Seleccionar...</option>';
+    
+    // Agregar cuentas a los dropdowns
+    if (accounts && Array.isArray(accounts)) {
+        accounts.forEach(account => {
+            const option = document.createElement('option');
+            option.value = account.name;
+            option.textContent = account.name;
+            
+            accountDropdown.appendChild(option.cloneNode(true));
+            transferFromDropdown.appendChild(option.cloneNode(true));
+        });
+    }
+    
+    // Agregar obligaciones al dropdown de transferencia
+    if (obligations && Array.isArray(obligations)) {
+        obligations.forEach(obligation => {
+            const option = document.createElement('option');
+            option.value = obligation.name;
+            option.textContent = obligation.name;
+            
+            accountDropdown.appendChild(option.cloneNode(true));
+            transferToDropdown.appendChild(option.cloneNode(true));
+        });
+    }
+}
+
+// Funciones auxiliares
+function formatCurrency(amount) {
+    const number = parseFloat(amount) || 0;
+    return new Intl.NumberFormat('es-CO', {
+        style: 'currency',
+        currency: 'COP',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(number);
+}
+
+function formatDate(dateString) {
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('es-CO', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric'
+        });
+    } catch (error) {
+        return dateString;
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Funciones de estado de la aplicación
+function showLoadingState() {
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    if (loadingOverlay) loadingOverlay.style.display = 'flex';
+}
+
+function hideLoadingState() {
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    if (loadingOverlay) loadingOverlay.style.display = 'none';
+}
+
+function showOfflineMode() {
+    const offlineMode = document.getElementById('offlineMode');
+    if (offlineMode) offlineMode.style.display = 'block';
+}
+
+function hideOfflineMode() {
+    const offlineMode = document.getElementById('offlineMode');
+    if (offlineMode) offlineMode.style.display = 'none';
+}
+
+function loadFallbackData() {
+    console.log('Cargando datos de respaldo...');
+    
+    const fallbackData = {
+        accounts: [],
+        obligations: [],
+        transactions: [],
+        status: "offline"
+    };
+    
+    updateInterface(fallbackData);
+}
+
+// Función para reintentar carga
+function retryLoadData() {
+    console.log('Reintentando cargar datos...');
+    loadFinancialData();
+}
+
+// Inicializar categorías
+function initializeCategories() {
+    const categoryContainer = document.getElementById('categoryContainer');
+    if (!categoryContainer) return;
+    
+    categoryContainer.innerHTML = '';
+    
+    Object.keys(categories).forEach(category => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'category-btn';
+        button.textContent = category;
+        button.addEventListener('click', () => selectCategory(category));
+        categoryContainer.appendChild(button);
+    });
+}
+
+// Seleccionar categoría
+function selectCategory(category) {
+    // Remover selección anterior
+    document.querySelectorAll('.category-btn').forEach(btn => {
+        btn.classList.remove('selected');
+    });
+    
+    // Marcar como seleccionado
+    const selectedBtn = Array.from(document.querySelectorAll('.category-btn')).find(btn => btn.textContent === category);
+    if (selectedBtn) selectedBtn.classList.add('selected');
+    
+    // Mostrar subcategorías si existen
+    const subcategoryGroup = document.getElementById('subcategoryGroup');
+    const subcategoryContainer = document.getElementById('subcategoryContainer');
+    
+    if (categories[category] && categories[category].length > 0) {
+        subcategoryGroup.style.display = 'block';
+        subcategoryContainer.innerHTML = '';
+        
+        categories[category].forEach(subcat => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'subcategory-btn';
+            button.textContent = subcat;
+            button.addEventListener('click', () => {
+                document.querySelectorAll('.subcategory-btn').forEach(btn => {
+                    btn.classList.remove('selected');
+                });
+                button.classList.add('selected');
+            });
+            subcategoryContainer.appendChild(button);
+        });
+    } else {
+        subcategoryGroup.style.display = 'none';
+    }
+}
+
+// Configurar botones de tipo de transacción
+function setupTransactionTypeButtons() {
+    const buttons = document.querySelectorAll('.transaction-type-buttons .btn');
+    buttons.forEach(button => {
+        button.addEventListener('click', function() {
+            buttons.forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+            
+            const isTransfer = this.dataset.type === 'transferencia';
+            document.getElementById('standard-form-fields').style.display = isTransfer ? 'none' : 'block';
+            document.getElementById('transfer-form-fields').style.display = isTransfer ? 'block' : 'none';
+        });
+    });
+}
+
+// Función de inicialización
+function initializeApp() {
+    console.log('Inicializando aplicación Finanzas Personales Pro...');
+    
+    // Inicializar componentes
+    initializeCategories();
+    setupTransactionTypeButtons();
+    
+    // Establecer fecha actual por defecto
+    document.getElementById('date').valueAsDate = new Date();
+    
+    // Cargar datos al inicio
+    loadFinancialData();
+    
+    // Recargar datos cada 5 minutos
+    setInterval(loadFinancialData, 5 * 60 * 1000);
+    
+    console.log('Aplicación inicializada correctamente');
+}
+
+// Event Listeners
+document.addEventListener('DOMContentLoaded', initializeApp);
+
+// Si el DOM ya está cargado
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeApp);
+} else {
+    initializeApp();
+}
+
+// Funciones de los botones de acción rápida (placeholders)
+function setMonthlyBudget() {
+    const budget = prompt('Ingresa tu presupuesto mensual:');
+    if (budget !== null && !isNaN(parseFloat(budget))) {
+        alert(`Presupuesto mensual establecido en: ${formatCurrency(parseFloat(budget))}`);
+    }
+}
+
+function generateReport() {
+    alert('Función de generar reporte en desarrollo.');
+}
+
+function exportData() {
+    alert('Función de exportar datos en desarrollo.');
+}
+
+function clearAllData() {
+    if (confirm('¿Estás seguro de que quieres eliminar todos los datos? Esta acción no se puede deshacer.')) {
+        alert('Función de limpiar datos en desarrollo.');
+    }
+}
+
+// Función global para debug
+window.debugFinancialApp = function() {
+    console.log('=== DEBUG FINANCIAL APP ===');
+    console.log('URL del Apps Script:', APPS_SCRIPT_URL);
+    console.log('Datos financieros:', financialData);
+    console.log('Estado de carga:', isLoading);
+    console.log('==========================');
+};
+</script>
+</body>
+</html>
