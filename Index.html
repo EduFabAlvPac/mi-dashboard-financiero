@@ -586,30 +586,6 @@ function hideOfflineMode() {
     if (offlineMode) offlineMode.style.display = 'none';
 }
 
-function loadFallbackData() {
-    console.log('Cargando datos de respaldo...');
-    
-    // Datos de ejemplo para modo offline
-    const fallbackData = {
-        accounts: [
-            {name: "Bancolombia Ahorros", initialBalance: 5000000, date: "2025-09-15"},
-            {name: "Nequi", initialBalance: 1000000, date: "2025-09-15"}
-        ],
-        obligations: [
-            {id: "obl_1757907471644", name: "Visa Bancolombia", type: "Tarjeta de Crédito", limit: 10000000, paymentDay: 15},
-            {id: "obl_1757907500405", name: "MasterCard Davivienda", type: "Tarjeta de Crédito", limit: 8000000, paymentDay: 20}
-        ],
-        transactions: [
-            {type: "gasto", amount: 350000, description: "Supermercado Éxito", category: "Alimentación", subcategory: "Mercado", account: "Nequi", date: "2025-09-15", EsTransferencia: ""},
-            {type: "gasto", amount: 120000, description: "Mensualidad Gym", category: "Personales", subcategory: "Gimnasio", account: "Visa Bancolombia", date: "2025-09-15", EsTransferencia: ""},
-            {type: "ingreso", amount: 4000000, description: "Pago Nómina", category: "Salario", subcategory: "", account: "Bancolombia Ahorros", date: "2025-09-15", EsTransferencia: ""}
-        ],
-        status: "offline"
-    };
-    
-    updateInterface(fallbackData);
-}
-
 // Función para reintentar carga
 function retryLoadData() {
     console.log('Reintentando cargar datos...');
