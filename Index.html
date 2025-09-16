@@ -149,7 +149,6 @@
             <div class="quick-action-btn" onclick="clearAllData()">Limpiar Datos</div>
         </div>
     </div>
-
 <script>
 // URL de tu Apps Script
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzbSvE00_dcrTnEmhPa5Csf4aQ5EXPe-huzpPtfphEzYONbItBlrgzr4JJ7xxdWAs_t/exec';
@@ -157,20 +156,27 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzbSvE00_dcrTnE
 // Variables globales
 let financialData = null;
 let isLoading = false;
+let currentTransactionType = 'gasto'; // Tipo de transacción por defecto
 
-// Categorías predefinidas
+// Categorías separadas por tipo
 const categories = {
-    'Alimentación': ['Supermercado', 'Restaurantes', 'Comida rápida'],
-    'Transporte': ['Gasolina', 'Transporte público', 'Mantenimiento'],
-    'Entretenimiento': ['Cine', 'Streaming', 'Eventos'],
-    'Personales': ['Ropa', 'Cuidado personal', 'Gimnasio'],
-    'Salud': ['Medicamentos', 'Consultas médicas', 'Seguro'],
-    'Hogar': ['Arriendo', 'Servicios', 'Mantenimiento'],
-    'Educación': ['Cursos', 'Libros', 'Matrículas'],
-    'Créditos': ['Pago Tarjeta', 'Préstamos'],
-    'Salario': ['Nómina', 'Freelance', 'Bonos'],
-    'Inversiones': ['Dividendos', 'Intereses'],
-    'Otros': ['Regalos', 'Donaciones']
+    gasto: {
+        'Alimentación': ['Supermercado', 'Restaurantes', 'Comida rápida'],
+        'Transporte': ['Gasolina', 'Transporte público', 'Mantenimiento'],
+        'Entretenimiento': ['Cine', 'Streaming', 'Eventos'],
+        'Personales': ['Ropa', 'Cuidado personal', 'Gimnasio'],
+        'Salud': ['Medicamentos', 'Consultas médicas', 'Seguro'],
+        'Hogar': ['Arriendo', 'Servicios', 'Mantenimiento'],
+        'Educación': ['Cursos', 'Libros', 'Matrículas'],
+        'Créditos': ['Pago Tarjeta', 'Préstamos'],
+        'Otros': ['Regalos', 'Donaciones']
+    },
+    ingreso: {
+        'Salario': ['Nómina', 'Freelance', 'Bonos'],
+        'Inversiones': ['Dividendos', 'Intereses'],
+        'Regalos': ['Cumpleaños', 'Navidad', 'Otros'],
+        'Otros ingresos': ['Ventas', 'Reembolsos', 'Otros']
+    }
 };
 
 // Función principal para cargar datos
@@ -196,6 +202,7 @@ async function loadFinancialData() {
             console.log('Datos cargados exitosamente:', data);
             updateInterface(data);
             hideOfflineMode();
+            initializeChart(data.transactions); // Inicializar gráfico
         } else {
             throw new Error(data.message || 'Error en los datos recibidos');
         }
@@ -208,6 +215,90 @@ async function loadFinancialData() {
         isLoading = false;
         hideLoadingState();
     }
+}
+
+// Función para inicializar el gráfico de comportamiento financiero
+function initializeChart(transactions) {
+    const ctx = document.getElementById('monthlyChart');
+    if (!ctx) return;
+    
+    // Datos para los últimos 6 meses
+    const months = [];
+    const incomeData = [];
+    const expensesData = [];
+    
+    const currentDate = new Date();
+    for (let i = 5; i >= 0; i--) {
+        const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+        const monthYear = date.toLocaleDateString('es-CO', { month: 'short', year: 'numeric' });
+        months.push(monthYear);
+        
+        // Calcular ingresos y gastos para cada mes
+        let monthlyIncome = 0;
+        let monthlyExpenses = 0;
+        
+        transactions.forEach(transaction => {
+            const transactionDate = new Date(transaction.date);
+            if (transactionDate.getMonth() === date.getMonth() && 
+                transactionDate.getFullYear() === date.getFullYear()) {
+                
+                const amount = parseFloat(transaction.amount) || 0;
+                if (transaction.type === 'ingreso') {
+                    monthlyIncome += amount;
+                } else if (transaction.type === 'gasto') {
+                    monthlyExpenses += amount;
+                }
+            }
+        });
+        
+        incomeData.push(monthlyIncome);
+        expensesData.push(monthlyExpenses);
+    }
+    
+    // Crear el gráfico
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: months,
+            datasets: [
+                {
+                    label: 'Ingresos',
+                    data: incomeData,
+                    borderColor: '#4CAF50',
+                    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                },
+                {
+                    label: 'Gastos',
+                    data: expensesData,
+                    borderColor: '#FF7043',
+                    backgroundColor: 'rgba(255, 112, 67, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Comportamiento Financiero últimos 6 meses'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString('es-CO');
+                        }
+                    }
+                }
+            }
+        }
+    });
 }
 
 // Función para actualizar toda la interfaz
@@ -373,8 +464,8 @@ function updateRecentTransactions(transactions) {
         return new Date(b.date) - new Date(a.date);
     });
     
-    // Mostrar solo las 5 más recientes
-    const recentTransactions = sortedTransactions.slice(0, 5);
+    // Mostrar solo las 10 más recientes (cambié de 5 a 10)
+    const recentTransactions = sortedTransactions.slice(0, 10);
     
     container.innerHTML = '';
     
@@ -394,6 +485,7 @@ function updateRecentTransactions(transactions) {
             <div class="transaction-info">
                 <h4>${escapeHtml(transaction.description || 'Sin descripción')}</h4>
                 <p>${escapeHtml(transaction.category || '')} ${transaction.subcategory ? '- ' + escapeHtml(transaction.subcategory) : ''} | ${escapeHtml(transaction.account || '')}</p>
+                <small>${formatDate(transaction.date)}</small>
             </div>
             <div class="transaction-amount ${amountClass}">
                 ${transaction.type === 'ingreso' ? '+' : '-'}${formatCurrency(Math.abs(amount))}
@@ -524,25 +616,28 @@ function retryLoadData() {
     loadFinancialData();
 }
 
-// Inicializar categorías
+// Inicializar categorías según el tipo de transacción
 function initializeCategories() {
     const categoryContainer = document.getElementById('categoryContainer');
     if (!categoryContainer) return;
     
     categoryContainer.innerHTML = '';
     
-    Object.keys(categories).forEach(category => {
+    const transactionType = currentTransactionType;
+    const transactionCategories = categories[transactionType] || {};
+    
+    Object.keys(transactionCategories).forEach(category => {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'category-btn';
         button.textContent = category;
-        button.addEventListener('click', () => selectCategory(category));
+        button.addEventListener('click', () => selectCategory(category, transactionType));
         categoryContainer.appendChild(button);
     });
 }
 
 // Seleccionar categoría
-function selectCategory(category) {
+function selectCategory(category, type) {
     // Remover selección anterior
     document.querySelectorAll('.category-btn').forEach(btn => {
         btn.classList.remove('selected');
@@ -556,11 +651,11 @@ function selectCategory(category) {
     const subcategoryGroup = document.getElementById('subcategoryGroup');
     const subcategoryContainer = document.getElementById('subcategoryContainer');
     
-    if (categories[category] && categories[category].length > 0) {
+    if (categories[type][category] && categories[type][category].length > 0) {
         subcategoryGroup.style.display = 'block';
         subcategoryContainer.innerHTML = '';
         
-        categories[category].forEach(subcat => {
+        categories[type][category].forEach(subcat => {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'subcategory-btn';
@@ -588,38 +683,174 @@ function setupTransactionTypeButtons() {
             buttons.forEach(btn => btn.classList.remove('active'));
             this.classList.add('active');
             
-            // Aquí puedes agregar lógica adicional para cambiar entre formularios
-            // si es necesario (gasto/ingreso/transferencia)
+            // Actualizar el tipo de transacción actual
+            currentTransactionType = this.dataset.type;
+            
+            // Actualizar categorías según el tipo seleccionado
+            initializeCategories();
+            
+            // Ocultar/mostrar campos según el tipo
+            const isTransfer = this.dataset.type === 'transferencia';
+            document.getElementById('standard-form-fields').style.display = isTransfer ? 'none' : 'block';
+            document.getElementById('transfer-form-fields').style.display = isTransfer ? 'block' : 'none';
         });
     });
 }
 
 // Configurar envío de formularios
 function setupFormHandlers() {
+    // Formulario de transacción
     const transactionForm = document.getElementById('transactionForm');
-    const accountForm = document.getElementById('accountForm');
-    const obligationForm = document.getElementById('obligationForm');
-    
     if (transactionForm) {
         transactionForm.addEventListener('submit', function(e) {
             e.preventDefault();
-            alert('Función de agregar transacción en desarrollo.');
+            addTransaction();
         });
     }
     
+    // Formulario de cuenta
+    const accountForm = document.getElementById('accountForm');
     if (accountForm) {
         accountForm.addEventListener('submit', function(e) {
             e.preventDefault();
-            alert('Función de agregar cuenta en desarrollo.');
+            addAccount();
         });
     }
     
+    // Formulario de obligación
+    const obligationForm = document.getElementById('obligationForm');
     if (obligationForm) {
         obligationForm.addEventListener('submit', function(e) {
             e.preventDefault();
-            alert('Función de agregar obligación en desarrollo.');
+            addObligation();
         });
     }
+}
+
+// Función para agregar transacción
+function addTransaction() {
+    const amount = parseFloat(document.getElementById('amount').value);
+    const description = document.getElementById('description').value;
+    const account = document.getElementById('account').value;
+    const date = document.getElementById('date').value;
+    
+    // Validaciones básicas
+    if (!amount || amount <= 0) {
+        alert('Por favor ingresa un monto válido');
+        return;
+    }
+    
+    if (!description) {
+        alert('Por favor ingresa una descripción');
+        return;
+    }
+    
+    if (!account) {
+        alert('Por favor selecciona una cuenta');
+        return;
+    }
+    
+    if (!date) {
+        alert('Por favor selecciona una fecha');
+        return;
+    }
+    
+    // Obtener categoría y subcategoría seleccionadas
+    const selectedCategory = document.querySelector('.category-btn.selected');
+    const selectedSubcategory = document.querySelector('.subcategory-btn.selected');
+    
+    const category = selectedCategory ? selectedCategory.textContent : '';
+    const subcategory = selectedSubcategory ? selectedSubcategory.textContent : '';
+    
+    // Crear objeto de transacción
+    const transaction = {
+        type: currentTransactionType,
+        amount: amount,
+        description: description,
+        category: category,
+        subcategory: subcategory,
+        account: account,
+        date: date,
+        EsTransferencia: document.getElementById('transfer-form-fields').style.display === 'block' ? 'sí' : ''
+    };
+    
+    console.log('Transacción a agregar:', transaction);
+    alert(`Transacción de ${currentTransactionType} agregada correctamente por ${formatCurrency(amount)}`);
+    
+    // Limpiar formulario
+    document.getElementById('transactionForm').reset();
+    document.getElementById('date').valueAsDate = new Date();
+    
+    // Recargar datos para actualizar la interfaz
+    loadFinancialData();
+}
+
+// Función para agregar cuenta
+function addAccount() {
+    const name = document.getElementById('newAccountName').value;
+    const initialBalance = parseFloat(document.getElementById('initialBalance').value) || 0;
+    
+    if (!name) {
+        alert('Por favor ingresa un nombre para la cuenta');
+        return;
+    }
+    
+    // Crear objeto de cuenta
+    const account = {
+        name: name,
+        initialBalance: initialBalance,
+        date: new Date().toISOString().split('T')[0]
+    };
+    
+    console.log('Cuenta a agregar:', account);
+    alert(`Cuenta "${name}" agregada correctamente con saldo inicial de ${formatCurrency(initialBalance)}`);
+    
+    // Limpiar formulario
+    document.getElementById('accountForm').reset();
+    
+    // Recargar datos para actualizar la interfaz
+    loadFinancialData();
+}
+
+// Función para agregar obligación
+function addObligation() {
+    const name = document.getElementById('obligationName').value;
+    const type = document.getElementById('obligationType').value;
+    const limit = parseFloat(document.getElementById('creditLimit').value);
+    const paymentDay = parseInt(document.getElementById('paymentDay').value);
+    
+    if (!name) {
+        alert('Por favor ingresa un nombre para la obligación');
+        return;
+    }
+    
+    if (!limit || limit <= 0) {
+        alert('Por favor ingresa un límite válido');
+        return;
+    }
+    
+    if (!paymentDay || paymentDay < 1 || paymentDay > 31) {
+        alert('Por favor ingresa un día de pago válido (1-31)');
+        return;
+    }
+    
+    // Crear objeto de obligación
+    const obligation = {
+        id: 'obl_' + Date.now(),
+        name: name,
+        type: type,
+        limit: limit,
+        paymentDay: paymentDay
+    };
+    
+    console.log('Obligación a agregar:', obligation);
+    alert(`Obligación "${name}" agregada correctamente con límite de ${formatCurrency(limit)}`);
+    
+    // Limpiar formulario
+    document.getElementById('obligationForm').reset();
+    
+    // Recargar datos para actualizar la interfaz
+    loadFinancialData();
 }
 
 // Función de inicialización
@@ -681,6 +912,7 @@ window.debugFinancialApp = function() {
     console.log('URL del Apps Script:', APPS_SCRIPT_URL);
     console.log('Datos financieros:', financialData);
     console.log('Estado de carga:', isLoading);
+    console.log('Tipo de transacción actual:', currentTransactionType);
     console.log('==========================');
 };
 </script>
