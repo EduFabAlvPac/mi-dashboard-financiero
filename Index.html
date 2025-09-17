@@ -229,7 +229,6 @@ function showLoadingIndicatorsInLists() {
 
 function updateInterface(data) {
     const totals = calculateTotals(data.accounts, data.transactions);
-    // CORRECCIÓN: El nombre de la función estaba mal escrito (B mayúscula).
     updateBalanceCards(totals);
     updateAccountsList(data.accounts, data.transactions);
     updateObligationsList(data.obligations, data.transactions);
@@ -463,7 +462,7 @@ function hideLoadingState() { document.getElementById('loadingOverlay').style.di
 function showOfflineMode() { document.getElementById('offlineMode').style.display = 'block'; }
 function hideOfflineMode() { document.getElementById('offlineMode').style.display = 'none'; }
 function retryLoadData() { loadFinancialData(); }
-function loadFallbackData() { const fallbackData = { accounts: [{name: "Bancolombia (Offline)", initialBalance: 5000000, date: "2025-09-15"}], obligations: [{id: "obl_1", name: "Visa (Offline)", type: "Tarjeta de Crédito", limit: 10000000, paymentDay: 15}], transactions: [{type: "ingreso", amount: 4000000, description: "Nómina (Offline)", category: "Salario", account: "Bancolombia (Offline)", date: "2025-09-15"}], status: "offline" }; updateInterface(fallbackData); initializeChart(fallbackData.transactions); }
+function loadFallbackData() { const fallbackData = { accounts: [{name: "Bancombia (Offline)", initialBalance: 5000000, date: "2025-09-15"}], obligations: [{id: "obl_1", name: "Visa (Offline)", type: "Tarjeta de Crédito", limit: 10000000, paymentDay: 15}], transactions: [{type: "ingreso", amount: 4000000, description: "Nómina (Offline)", category: "Salario", account: "Bancombia (Offline)", date: "2025-09-15"}], status: "offline" }; updateInterface(fallbackData); initializeChart(fallbackData.transactions); }
 
 document.addEventListener('DOMContentLoaded', initializeApp);
 </script>
