@@ -320,27 +320,54 @@ function updateInterface(data) {
     updateAccountDropdowns(data.accounts, data.obligations);
 }
 
+// REEMPLAZA LA FUNCIÓN ANTIGUA CON ESTA VERSIÓN CORREGIDA
 function calculateTotals(data) {
     const currentDate = new Date();
     const currentMonth = currentDate.getMonth();
     const currentYear = currentDate.getFullYear();
+
     let totalBalance = 0;
     let monthlyIncome = 0;
     let monthlyExpenses = 0;
 
+    // 1. Empezamos con la suma de los saldos iniciales de todas las cuentas.
     if (data.accounts && Array.isArray(data.accounts)) {
-        data.accounts.forEach(account => totalBalance += parseFloat(account.initialBalance) || 0);
+        data.accounts.forEach(account => {
+            totalBalance += parseFloat(account.initialBalance) || 0;
+        });
     }
+
+    // 2. Procesamos TODAS las transacciones para ajustar el balance y calcular los totales del mes.
     if (data.transactions && Array.isArray(data.transactions)) {
         data.transactions.forEach(transaction => {
-            const transactionDate = new Date(transaction.date);
-            if (transactionDate.getMonth() === currentMonth && transactionDate.getFullYear() === currentYear) {
+            try {
                 const amount = parseFloat(transaction.amount) || 0;
-                if (transaction.type === 'ingreso') monthlyIncome += amount;
-                else if (transaction.type === 'gasto') monthlyExpenses += amount;
+                
+                // Primero, ajustamos el BALANCE TOTAL con CADA transacción (ingreso suma, gasto resta).
+                if (transaction.type === 'ingreso') {
+                    totalBalance += amount;
+                } else if (transaction.type === 'gasto') {
+                    totalBalance -= amount;
+                }
+
+                // Segundo, verificamos si la transacción es de ESTE MES para los totales mensuales.
+                // Se incluye un ajuste para evitar problemas con la zona horaria.
+                const transactionDate = new Date(transaction.date);
+                const adjustedDate = new Date(transactionDate.valueOf() + transactionDate.getTimezoneOffset() * 60 * 1000);
+
+                if (adjustedDate.getMonth() === currentMonth && adjustedDate.getFullYear() === currentYear) {
+                    if (transaction.type === 'ingreso') {
+                        monthlyIncome += amount;
+                    } else if (transaction.type === 'gasto') {
+                        monthlyExpenses += amount;
+                    }
+                }
+            } catch(e) {
+                console.warn("No se pudo procesar la transacción para los totales:", transaction, e);
             }
         });
     }
+
     return { totalBalance, monthlyIncome, monthlyExpenses, remainingBudget: monthlyIncome - monthlyExpenses };
 }
 
