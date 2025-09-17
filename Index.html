@@ -179,9 +179,7 @@ const categories = {
     }
 };
 
-// MEJORA: La función ahora puede controlar si debe recargar la UI o no.
 async function sendDataToSheet(action, data, shouldReload = true) {
-    // No mostramos el spinner para envíos intermedios.
     if (shouldReload) {
         isLoading = true;
         showLoadingState();
@@ -198,8 +196,7 @@ async function sendDataToSheet(action, data, shouldReload = true) {
 
         if (result.status === 'success' && shouldReload) {
             console.log(`Acción '${action}' completada. Recargando datos...`);
-            // Dejamos un pequeño margen para que Google Sheets procese el guardado.
-            setTimeout(() => { loadFinancialData(); }, 1000); // Aumentado a 1 segundo para mayor seguridad.
+            setTimeout(() => { loadFinancialData(); }, 1000);
         } else if (result.status !== 'success') {
             throw new Error(result.message || 'El servidor reportó un error.');
         }
@@ -290,7 +287,6 @@ function calculateTotals(accounts = [], transactions = []) {
             else if (transaction.type === 'gasto') monthlyExpenses += amount;
         }
     });
-
     return { totalBalance, monthlyIncome, monthlyExpenses, remainingBudget: monthlyIncome - monthlyExpenses };
 }
 
@@ -346,13 +342,23 @@ function updateRecentTransactions(transactions = []) {
     });
 }
 
+// MEJORA: Gestiona dinámicamente qué campos son 'requeridos'.
+function toggleRequiredFields(isPayment) {
+    document.getElementById('description').required = !isPayment;
+    document.getElementById('account').required = !isPayment;
+    document.getElementById('transferFrom').required = isPayment;
+    document.getElementById('transferTo').required = isPayment;
+}
+
 function selectCategory(category) {
     document.querySelectorAll('.category-btn.selected').forEach(btn => btn.classList.remove('selected'));
     const selectedBtn = Array.from(document.querySelectorAll('.category-btn')).find(btn => btn.textContent === category);
     if (selectedBtn) selectedBtn.classList.add('selected');
+
     const subcategoryGroup = document.getElementById('subcategoryGroup');
     const subcategoryContainer = document.getElementById('subcategoryContainer');
     const subcats = categories[currentTransactionType][category];
+    
     if (subcats && subcats.length > 0) {
         subcategoryGroup.style.display = 'block';
         subcategoryContainer.innerHTML = '';
@@ -367,6 +373,7 @@ function selectCategory(category) {
                 const isPayment = category === 'Créditos' && subcat === 'Pago Tarjeta';
                 document.getElementById('standard-form-fields').style.display = isPayment ? 'none' : 'block';
                 document.getElementById('transfer-form-fields').style.display = isPayment ? 'block' : 'none';
+                toggleRequiredFields(isPayment);
             });
             subcategoryContainer.appendChild(button);
         });
@@ -375,10 +382,10 @@ function selectCategory(category) {
         subcategoryContainer.innerHTML = '';
         document.getElementById('standard-form-fields').style.display = 'block';
         document.getElementById('transfer-form-fields').style.display = 'none';
+        toggleRequiredFields(false);
     }
 }
 
-// MEJORA: Lógica de envío secuencial y segura para los pagos de tarjeta.
 async function addTransaction() {
     const date = document.getElementById('date').value;
     const amount = parseFloat(document.getElementById('amount').value);
@@ -386,18 +393,16 @@ async function addTransaction() {
     if (document.getElementById('transfer-form-fields').style.display === 'block') {
         const transferFrom = document.getElementById('transferFrom').value;
         const transferTo = document.getElementById('transferTo').value;
-        if (!amount || amount <= 0 || !transferFrom || !transferTo || !date) {
-            alert('Para un pago, selecciona las cuentas de origen y destino, y un monto válido.'); return;
-        }
+        if (!amount || amount <= 0 || !transferFrom || !transferTo || !date) { alert('Para un pago, selecciona las cuentas de origen y destino, y un monto válido.'); return; }
         
         isLoading = true;
         showLoadingState();
 
         const expenseTransaction = { type: 'gasto', amount: amount, description: `Pago a ${transferTo}`, category: 'Créditos', subcategory: 'Pago Tarjeta', account: transferFrom, date: date, EsTransferencia: 'sí' };
-        await sendDataToSheet('addTransaction', expenseTransaction, false); // Envía sin recargar
+        await sendDataToSheet('addTransaction', expenseTransaction, false);
 
         const incomeTransaction = { type: 'ingreso', amount: amount, description: `Abono desde ${transferFrom}`, category: 'Créditos', subcategory: 'Pago Tarjeta', account: transferTo, date: date, EsTransferencia: 'sí' };
-        await sendDataToSheet('addTransaction', incomeTransaction, true); // Envía Y AHORA SÍ recarga
+        await sendDataToSheet('addTransaction', incomeTransaction, true);
     } else {
         const description = document.getElementById('description').value;
         const account = document.getElementById('account').value;
@@ -414,6 +419,7 @@ async function addTransaction() {
     document.querySelectorAll('.selected').forEach(btn => btn.classList.remove('selected'));
     document.getElementById('standard-form-fields').style.display = 'block';
     document.getElementById('transfer-form-fields').style.display = 'none';
+    toggleRequiredFields(false);
 }
 
 function addAccount() {
@@ -503,6 +509,7 @@ function setupTransactionTypeButtons() {
             document.querySelectorAll('.transaction-type-buttons .btn').forEach(btn => btn.classList.remove('active')); this.classList.add('active');
             currentTransactionType = this.dataset.type; initializeCategories(); document.getElementById('subcategoryGroup').style.display = 'none';
             document.getElementById('standard-form-fields').style.display = 'block'; document.getElementById('transfer-form-fields').style.display = 'none';
+            toggleRequiredFields(false);
         });
     });
 }
