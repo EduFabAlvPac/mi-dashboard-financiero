@@ -111,9 +111,10 @@
                     </div>
 
                     <div id="transfer-form-fields" style="display: none;">
-    			<div class="form-group"><label for="transferFrom">Pagar Desde la Cuenta</label><select id="transferFrom"></select></div>
-    			<div class="form-group"><label for="transferTo">Pagar a la Tarjeta</label><select id="transferTo"></select></div>
-		</div>
+                        <div class="form-group"><label for="transferFrom">Pagar Desde la Cuenta</label><select id="transferFrom"></select></div>
+                        <div class="form-group"><label for="transferTo">Pagar a la Tarjeta</label><select id="transferTo"></select></div>
+                    </div>
+
                     <div class="form-group"><label for="date">Fecha</label><input type="date" id="date" required></div>
                     <button type="submit" class="btn">Agregar Transacción</button>
                 </form>
@@ -194,7 +195,6 @@ async function sendDataToSheet(action, data) {
 
         if (result.status === 'success') {
             console.log(`Acción '${action}' completada. Recargando datos...`);
-            // Dejamos un pequeño margen para que Google Sheets procese el guardado
             setTimeout(() => { loadFinancialData(); }, 500);
         } else {
             throw new Error(result.message || 'El servidor reportó un error.');
@@ -274,7 +274,6 @@ function calculateTotals(accounts = [], transactions = []) {
     const currentMonth = currentDate.getMonth();
     const currentYear = currentDate.getFullYear();
     transactions.forEach(transaction => {
-        // Excluimos los pagos de tarjeta de los totales de "Gastos del Mes" para no contarlos dos veces
         if (transaction.category === 'Créditos' && transaction.subcategory === 'Pago Tarjeta') return;
 
         const transactionDate = new Date(transaction.date);
@@ -316,7 +315,6 @@ function updateAccountsList(accounts = [], transactions = []) {
     });
 }
 
-// MEJORA: Muestra la deuda debajo del límite y la calcula restando los abonos.
 function updateObligationsList(obligations = [], transactions = []) {
     const container = document.getElementById('obligationList');
     container.innerHTML = '';
@@ -324,18 +322,14 @@ function updateObligationsList(obligations = [], transactions = []) {
         container.innerHTML = '<li class="account-item">No hay obligaciones registradas.</li>';
         return;
     }
-
     obligations.forEach(obligation => {
         let debt = 0;
         transactions.forEach(t => {
             if (t.account === obligation.name) {
-                // Los gastos en la tarjeta AUMENTAN la deuda
                 if (t.type === 'gasto') debt += parseFloat(t.amount) || 0;
-                // Los ingresos (abonos) en la tarjeta DISMINUYEN la deuda
                 else if (t.type === 'ingreso') debt -= parseFloat(t.amount) || 0;
             }
         });
-
         const item = document.createElement('li');
         item.className = 'account-item';
         item.innerHTML = `
@@ -350,7 +344,32 @@ function updateObligationsList(obligations = [], transactions = []) {
     });
 }
 
-// MEJORA: Habilita el formulario de transferencia para 'Pago Tarjeta'.
+// ESTA ES LA FUNCIÓN QUE FALTABA Y CAUSÓ EL ERROR ANTERIOR
+function updateRecentTransactions(transactions = []) {
+    const container = document.getElementById('transactionList');
+    container.innerHTML = '';
+    if (transactions.length === 0) {
+        container.innerHTML = '<li class="transaction-item">No hay transacciones registradas.</li>';
+        return;
+    }
+    const sorted = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+    sorted.slice(0, 10).forEach(transaction => {
+        const amount = parseFloat(transaction.amount) || 0;
+        const item = document.createElement('li');
+        item.className = `transaction-item ${transaction.type === 'ingreso' ? 'income' : 'expense'}`;
+        item.innerHTML = `
+            <div class="transaction-info">
+                <h4>${escapeHtml(transaction.description)}</h4>
+                <p>${escapeHtml(transaction.category)} ${transaction.subcategory ? '- ' + escapeHtml(transaction.subcategory) : ''} | ${escapeHtml(transaction.account)}</p>
+                <small>${formatDate(transaction.date)}</small>
+            </div>
+            <div class="transaction-amount ${transaction.type === 'ingreso' ? 'amount-income' : 'amount-expense'}">
+                ${transaction.type === 'ingreso' ? '+' : '-'}${formatCurrency(Math.abs(amount))}
+            </div>`;
+        container.appendChild(item);
+    });
+}
+
 function selectCategory(category) {
     document.querySelectorAll('.category-btn.selected').forEach(btn => btn.classList.remove('selected'));
     const selectedBtn = Array.from(document.querySelectorAll('.category-btn')).find(btn => btn.textContent === category);
@@ -371,8 +390,6 @@ function selectCategory(category) {
             button.addEventListener('click', () => {
                 document.querySelectorAll('.subcategory-btn.selected').forEach(btn => btn.classList.remove('selected'));
                 button.classList.add('selected');
-
-                // Lógica para mostrar/ocultar campos de transferencia
                 const isPayment = category === 'Créditos' && subcat === 'Pago Tarjeta';
                 document.getElementById('standard-form-fields').style.display = isPayment ? 'none' : 'block';
                 document.getElementById('transfer-form-fields').style.display = isPayment ? 'block' : 'none';
@@ -382,62 +399,36 @@ function selectCategory(category) {
     } else {
         subcategoryGroup.style.display = 'none';
         subcategoryContainer.innerHTML = '';
-        // Si no hay subcategorías, asegurar que los campos estándar sean visibles
         document.getElementById('standard-form-fields').style.display = 'block';
         document.getElementById('transfer-form-fields').style.display = 'none';
     }
 }
 
-// MEJORA: Lógica para crear dos transacciones para un pago de tarjeta.
 function addTransaction() {
     const date = document.getElementById('date').value;
     const amount = parseFloat(document.getElementById('amount').value);
 
-    // Si es un Pago de Tarjeta, usa la lógica de transferencia
     if (document.getElementById('transfer-form-fields').style.display === 'block') {
         const transferFrom = document.getElementById('transferFrom').value;
         const transferTo = document.getElementById('transferTo').value;
-
         if (!amount || amount <= 0 || !transferFrom || !transferTo || !date) {
-            alert('Para un pago, selecciona las cuentas de origen y destino, y un monto válido.');
-            return;
+            alert('Para un pago, selecciona las cuentas de origen y destino, y un monto válido.'); return;
         }
-
-        // 1. Gasto desde la cuenta de origen
-        const expenseTransaction = {
-            type: 'gasto', amount: amount, description: `Pago a ${transferTo}`,
-            category: 'Créditos', subcategory: 'Pago Tarjeta', account: transferFrom, date: date,
-            EsTransferencia: 'sí'
-        };
+        const expenseTransaction = { type: 'gasto', amount: amount, description: `Pago a ${transferTo}`, category: 'Créditos', subcategory: 'Pago Tarjeta', account: transferFrom, date: date, EsTransferencia: 'sí' };
         sendDataToSheet('addTransaction', expenseTransaction);
-
-        // 2. Ingreso (abono) a la tarjeta de destino
-        const incomeTransaction = {
-            type: 'ingreso', amount: amount, description: `Abono desde ${transferFrom}`,
-            category: 'Créditos', subcategory: 'Pago Tarjeta', account: transferTo, date: date,
-            EsTransferencia: 'sí'
-        };
-        // Se envía el segundo registro un poco después para asegurar el guardado
+        const incomeTransaction = { type: 'ingreso', amount: amount, description: `Abono desde ${transferFrom}`, category: 'Créditos', subcategory: 'Pago Tarjeta', account: transferTo, date: date, EsTransferencia: 'sí' };
         setTimeout(() => sendDataToSheet('addTransaction', incomeTransaction), 250);
-
-    } else { // Lógica para transacciones normales
+    } else {
         const description = document.getElementById('description').value;
         const account = document.getElementById('account').value;
         if (!amount || amount <= 0 || !description || !account || !date) { alert('Por favor, completa todos los campos.'); return; }
-        
         const category = document.querySelector('.category-btn.selected')?.textContent || '';
         if (!category) { alert('Por favor selecciona una categoría'); return; }
-        
         const subcategory = document.querySelector('.subcategory-btn.selected')?.textContent || '';
-        
-        const transaction = {
-            type: currentTransactionType, amount, description, category, subcategory, account, date,
-            EsTransferencia: ''
-        };
+        const transaction = { type: currentTransactionType, amount, description, category, subcategory, account, date, EsTransferencia: '' };
         sendDataToSheet('addTransaction', transaction);
     }
 
-    // Limpiar y resetear el formulario
     document.getElementById('transactionForm').reset();
     document.getElementById('date').valueAsDate = new Date();
     document.getElementById('subcategoryGroup').style.display = 'none';
