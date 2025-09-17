@@ -178,33 +178,25 @@ const categories = {
     }
 };
 
-// REEMPLAZA LA VERSIÓN ANTIGUA DE ESTA FUNCIÓN
 async function sendDataToSheet(action, data) {
     if (isLoading) return;
     isLoading = true;
     showLoadingState();
     try {
-        // 1. Capturamos la respuesta del servidor después de enviar los datos (POST).
         const response = await fetch(APPS_SCRIPT_URL, {
             method: 'POST',
             body: JSON.stringify({ action: action, data: data }),
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         });
 
-        // 2. Verificamos que la respuesta sea válida y la convertimos a JSON.
-        if (!response.ok) {
-            throw new Error('La respuesta del servidor no fue exitosa.');
-        }
+        if (!response.ok) throw new Error('La respuesta del servidor no fue exitosa.');
         const result = await response.json();
 
-        // 3. Si el servidor nos confirma que todo se guardó ("status: success")...
         if (result.status === 'success') {
-            console.log(`Acción '${action}' completada exitosamente. Recargando datos...`);
-            // ...entonces y solo entonces, pedimos los datos actualizados (GET).
+            console.log(`Acción '${action}' completada. Recargando datos...`);
             await loadFinancialData();
         } else {
-            // Si el servidor reportó un error, lo mostramos.
-            throw new Error(result.message || 'El servidor reportó un error desconocido.');
+            throw new Error(result.message || 'El servidor reportó un error.');
         }
 
     } catch (error) {
@@ -212,8 +204,6 @@ async function sendDataToSheet(action, data) {
         alert(`Hubo un error al guardar o refrescar los datos: ${error.message}`);
     } finally {
         isLoading = false;
-        // El hideLoadingState() ya es llamado por loadFinancialData, 
-        // pero lo dejamos aquí por si ocurre un error antes de esa llamada.
         hideLoadingState(); 
     }
 }
@@ -251,124 +241,119 @@ async function loadFinancialData() {
 
 function showLoadingIndicatorsInLists() {
     const loadingMessage = '<li class="account-item" style="justify-content: center;">Cargando...</li>';
-    
-    const accountList = document.getElementById('accountList');
-    if (accountList) accountList.innerHTML = loadingMessage;
-    
-    const obligationList = document.getElementById('obligationList');
-    if (obligationList) obligationList.innerHTML = loadingMessage;
-    
-    const transactionList = document.getElementById('transactionList');
-    if (transactionList) transactionList.innerHTML = '<div class="transaction-item" style="justify-content: center;">Cargando...</div>';
-}
-
-function initializeChart(transactions) {
-    const ctx = document.getElementById('monthlyChart').getContext('2d');
-    if (!ctx) return;
-    if (monthlyChart) monthlyChart.destroy();
-    
-    const months = [];
-    const incomeData = [];
-    const expensesData = [];
-    const currentDate = new Date();
-
-    for (let i = 5; i >= 0; i--) {
-        const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
-        const monthYear = date.toLocaleDateString('es-CO', { month: 'short', year: 'numeric' });
-        months.push(monthYear);
-        
-        let monthlyIncome = 0;
-        let monthlyExpenses = 0;
-        
-        if (transactions && Array.isArray(transactions)) {
-            transactions.forEach(transaction => {
-                const transactionDate = new Date(transaction.date);
-                if (transactionDate.getMonth() === date.getMonth() && transactionDate.getFullYear() === date.getFullYear()) {
-                    const amount = parseFloat(transaction.amount) || 0;
-                    if (transaction.type === 'ingreso') monthlyIncome += amount;
-                    else if (transaction.type === 'gasto') monthlyExpenses += amount;
-                }
-            });
-        }
-        incomeData.push(monthlyIncome);
-        expensesData.push(monthlyExpenses);
-    }
-    
-    monthlyChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: months,
-            datasets: [
-                { label: 'Ingresos', data: incomeData, borderColor: '#4CAF50', backgroundColor: 'rgba(76, 175, 80, 0.1)', tension: 0.3, fill: true },
-                { label: 'Gastos', data: expensesData, borderColor: '#FF7043', backgroundColor: 'rgba(255, 112, 67, 0.1)', tension: 0.3, fill: true }
-            ]
-        },
-        options: {
-            responsive: true,
-            plugins: { title: { display: true, text: 'Comportamiento Financiero últimos 6 meses' } },
-            scales: { y: { beginAtZero: true, ticks: { callback: (value) => '$' + value.toLocaleString('es-CO') } } }
-        }
-    });
+    document.getElementById('accountList').innerHTML = loadingMessage;
+    document.getElementById('obligationList').innerHTML = loadingMessage;
+    document.getElementById('transactionList').innerHTML = '<div class="transaction-item" style="justify-content: center;">Cargando...</div>';
 }
 
 function updateInterface(data) {
-    const totals = calculateTotals(data);
+    // MEJORA: Pasamos todas las transacciones a las funciones que las necesitan.
+    const totals = calculateTotals(data.accounts, data.transactions);
     updateBalanceCards(totals);
-    updateAccountsList(data.accounts);
-    updateObligationsList(data.obligations);
+    updateAccountsList(data.accounts, data.transactions);
+    updateObligationsList(data.obligations, data.transactions);
     updateRecentTransactions(data.transactions);
     updateAccountDropdowns(data.accounts, data.obligations);
 }
 
-// REEMPLAZA LA FUNCIÓN ANTIGUA CON ESTA VERSIÓN CORREGIDA
-function calculateTotals(data) {
-    const currentDate = new Date();
-    const currentMonth = currentDate.getMonth();
-    const currentYear = currentDate.getFullYear();
-
+// MEJORA: La función ahora calcula los saldos REALES de las cuentas.
+function calculateTotals(accounts = [], transactions = []) {
     let totalBalance = 0;
     let monthlyIncome = 0;
     let monthlyExpenses = 0;
-
-    // 1. Empezamos con la suma de los saldos iniciales de todas las cuentas.
-    if (data.accounts && Array.isArray(data.accounts)) {
-        data.accounts.forEach(account => {
-            totalBalance += parseFloat(account.initialBalance) || 0;
-        });
-    }
-
-    // 2. Procesamos TODAS las transacciones para ajustar el balance y calcular los totales del mes.
-    if (data.transactions && Array.isArray(data.transactions)) {
-        data.transactions.forEach(transaction => {
-            try {
-                const amount = parseFloat(transaction.amount) || 0;
-                
-                // Primero, ajustamos el BALANCE TOTAL con CADA transacción (ingreso suma, gasto resta).
+    
+    // 1. Calculamos el saldo actual de cada cuenta de débito (dinero que tienes).
+    accounts.forEach(account => {
+        let currentAccountBalance = parseFloat(account.initialBalance) || 0;
+        transactions.forEach(transaction => {
+            if (transaction.account === account.name) {
                 if (transaction.type === 'ingreso') {
-                    totalBalance += amount;
+                    currentAccountBalance += parseFloat(transaction.amount) || 0;
                 } else if (transaction.type === 'gasto') {
-                    totalBalance -= amount;
+                    currentAccountBalance -= parseFloat(transaction.amount) || 0;
                 }
-
-                // Segundo, verificamos si la transacción es de ESTE MES para los totales mensuales.
-                // Se incluye un ajuste para evitar problemas con la zona horaria.
-                const transactionDate = new Date(transaction.date);
-                const adjustedDate = new Date(transactionDate.valueOf() + transactionDate.getTimezoneOffset() * 60 * 1000);
-
-                if (adjustedDate.getMonth() === currentMonth && adjustedDate.getFullYear() === currentYear) {
-                    if (transaction.type === 'ingreso') {
-                        monthlyIncome += amount;
-                    } else if (transaction.type === 'gasto') {
-                        monthlyExpenses += amount;
-                    }
-                }
-            } catch(e) {
-                console.warn("No se pudo procesar la transacción para los totales:", transaction, e);
             }
         });
-    }
+        totalBalance += currentAccountBalance;
+    });
+
+    // 2. Calculamos los ingresos y gastos solo del mes actual para las tarjetas superiores.
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth();
+    const currentYear = currentDate.getFullYear();
+    transactions.forEach(transaction => {
+        const transactionDate = new Date(transaction.date);
+        const adjustedDate = new Date(transactionDate.valueOf() + transactionDate.getTimezoneOffset() * 60 * 1000);
+        if (adjustedDate.getMonth() === currentMonth && adjustedDate.getFullYear() === currentYear) {
+            const amount = parseFloat(transaction.amount) || 0;
+            if (transaction.type === 'ingreso') {
+                monthlyIncome += amount;
+            } else if (transaction.type === 'gasto') {
+                monthlyExpenses += amount;
+            }
+        }
+    });
 
     return { totalBalance, monthlyIncome, monthlyExpenses, remainingBudget: monthlyIncome - monthlyExpenses };
+}
+
+// MEJORA: Muestra el saldo ACTUAL de cada cuenta.
+function updateAccountsList(accounts = [], transactions = []) {
+    const container = document.getElementById('accountList');
+    container.innerHTML = '';
+    if (accounts.length === 0) {
+        container.innerHTML = '<li class="account-item">No hay cuentas registradas.</li>';
+        return;
+    }
+
+    accounts.forEach(account => {
+        let currentBalance = parseFloat(account.initialBalance) || 0;
+        transactions.forEach(t => {
+            if (t.account === account.name) {
+                if (t.type === 'ingreso') currentBalance += parseFloat(t.amount) || 0;
+                else if (t.type === 'gasto') currentBalance -= parseFloat(t.amount) || 0;
+            }
+        });
+
+        const item = document.createElement('li');
+        item.className = 'account-item';
+        item.innerHTML = `
+            <div class="account-info">
+                <h4 class="account-name">${escapeHtml(account.name)}</h4>
+                <p>Saldo actual</p>
+            </div>
+            <div class="account-balance ${currentBalance < 0 ? 'amount-debt' : ''}">${formatCurrency(currentBalance)}</div>`;
+        container.appendChild(item);
+    });
+}
+
+// MEJORA: Muestra la deuda ACTUAL de cada tarjeta de crédito.
+function updateObligationsList(obligations = [], transactions = []) {
+    const container = document.getElementById('obligationList');
+    container.innerHTML = '';
+    if (obligations.length === 0) {
+        container.innerHTML = '<li class="account-item">No hay obligaciones registradas.</li>';
+        return;
+    }
+
+    obligations.forEach(obligation => {
+        let currentDebt = 0;
+        transactions.forEach(t => {
+            if (t.type === 'gasto' && t.account === obligation.name) {
+                currentDebt += parseFloat(t.amount) || 0;
+            }
+        });
+
+        const item = document.createElement('li');
+        item.className = 'account-item';
+        item.innerHTML = `
+            <div class="account-info">
+                <h4 class="account-name">${escapeHtml(obligation.name)}</h4>
+                <p>Límite: ${formatCurrency(obligation.limit)}</p>
+            </div>
+            <div class="account-balance amount-debt">Deuda: ${formatCurrency(currentDebt)}</div>`;
+        container.appendChild(item);
+    });
 }
 
 function updateBalanceCards(totals) {
@@ -378,51 +363,10 @@ function updateBalanceCards(totals) {
     document.getElementById('remainingBudget').textContent = formatCurrency(totals.remainingBudget);
 }
 
-function updateAccountsList(accounts) {
-    const container = document.getElementById('accountList');
-    container.innerHTML = '';
-    if (!accounts || accounts.length === 0) {
-        container.innerHTML = '<li class="account-item">No hay cuentas registradas.</li>';
-        return;
-    }
-    accounts.forEach(account => {
-        const balance = parseFloat(account.initialBalance) || 0;
-        const item = document.createElement('li');
-        item.className = 'account-item';
-        item.innerHTML = `
-            <div class="account-info">
-                <h4 class="account-name">${escapeHtml(account.name)}</h4>
-                <p>Saldo inicial: ${formatDate(account.date)}</p>
-            </div>
-            <div class="account-balance ${balance < 0 ? 'amount-debt' : ''}">${formatCurrency(balance)}</div>`;
-        container.appendChild(item);
-    });
-}
-
-function updateObligationsList(obligations) {
-    const container = document.getElementById('obligationList');
-    container.innerHTML = '';
-    if (!obligations || obligations.length === 0) {
-        container.innerHTML = '<li class="account-item">No hay obligaciones registradas.</li>';
-        return;
-    }
-    obligations.forEach(obligation => {
-        const item = document.createElement('li');
-        item.className = 'account-item';
-        item.innerHTML = `
-            <div class="account-info">
-                <h4 class="account-name">${escapeHtml(obligation.name)}</h4>
-                <p>${escapeHtml(obligation.type)} - Día de pago: ${obligation.paymentDay}</p>
-            </div>
-            <div class="account-balance">${formatCurrency(obligation.limit)}</div>`;
-        container.appendChild(item);
-    });
-}
-
-function updateRecentTransactions(transactions) {
+function updateRecentTransactions(transactions = []) {
     const container = document.getElementById('transactionList');
     container.innerHTML = '';
-    if (!transactions || transactions.length === 0) {
+    if (transactions.length === 0) {
         container.innerHTML = '<li class="transaction-item">No hay transacciones registradas.</li>';
         return;
     }
@@ -444,34 +388,15 @@ function updateRecentTransactions(transactions) {
     });
 }
 
-function updateAccountDropdowns(accounts, obligations) {
-    const accountDropdown = document.getElementById('account');
-    const transferFrom = document.getElementById('transferFrom');
-    const transferTo = document.getElementById('transferTo');
-    
-    [accountDropdown, transferFrom, transferTo].forEach(dd => dd.innerHTML = '<option value="">Seleccionar...</option>');
-
-    if (accounts) accounts.forEach(acc => {
-        [accountDropdown, transferFrom].forEach(dd => dd.add(new Option(acc.name, acc.name)));
-    });
-    if (obligations) obligations.forEach(obl => {
-        [accountDropdown, transferTo].forEach(dd => dd.add(new Option(obl.name, obl.name)));
-    });
-}
-
 function addTransaction() {
     const amount = parseFloat(document.getElementById('amount').value);
     const description = document.getElementById('description').value;
     const account = document.getElementById('account').value;
     const date = document.getElementById('date').value;
     
-    if (!amount || amount <= 0 || !description || !account || !date) {
-        alert('Por favor, completa todos los campos.'); return;
-    }
+    if (!amount || amount <= 0 || !description || !account || !date) { alert('Por favor, completa todos los campos.'); return; }
     const category = document.querySelector('.category-btn.selected')?.textContent || '';
-    if (!category) {
-        alert('Por favor selecciona una categoría'); return;
-    }
+    if (!category) { alert('Por favor selecciona una categoría'); return; }
     const subcategory = document.querySelector('.subcategory-btn.selected')?.textContent || '';
     const transaction = {
         type: currentTransactionType, amount, description, category, subcategory, account, date,
@@ -498,94 +423,10 @@ function addObligation() {
     const type = document.getElementById('obligationType').value;
     const limit = parseFloat(document.getElementById('creditLimit').value);
     const paymentDay = parseInt(document.getElementById('paymentDay').value);
-    if (!name || !limit || limit <= 0 || !paymentDay || paymentDay < 1 || paymentDay > 31) {
-        alert('Por favor, completa todos los campos con valores válidos.'); return;
-    }
+    if (!name || !limit || limit <= 0 || !paymentDay || paymentDay < 1 || paymentDay > 31) { alert('Por favor, completa todos los campos con valores válidos.'); return; }
     const obligation = { id: 'obl_' + Date.now(), name, type, limit, paymentDay };
     sendDataToSheet('addObligation', obligation);
     document.getElementById('obligationForm').reset();
-}
-
-function formatCurrency(amount) { return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(parseFloat(amount) || 0); }
-function formatDate(dateString) { try { const date = new Date(dateString); const userTimezoneOffset = date.getTimezoneOffset() * 60000; return new Date(date.getTime() + userTimezoneOffset).toLocaleDateString('es-CO', {day:'2-digit', month: '2-digit', year:'numeric'}); } catch { return dateString; } }
-function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text || ''; return div.innerHTML; }
-function showLoadingState() { document.getElementById('loadingOverlay').style.display = 'flex'; }
-function hideLoadingState() { document.getElementById('loadingOverlay').style.display = 'none'; }
-function showOfflineMode() { document.getElementById('offlineMode').style.display = 'block'; }
-function hideOfflineMode() { document.getElementById('offlineMode').style.display = 'none'; }
-function retryLoadData() { loadFinancialData(); }
-
-function loadFallbackData() {
-    const fallbackData = {
-        accounts: [{name: "Bancolombia (Offline)", initialBalance: 5000000, date: "2025-09-15"}],
-        obligations: [{id: "obl_1", name: "Visa (Offline)", type: "Tarjeta de Crédito", limit: 10000000, paymentDay: 15}],
-        transactions: [{type: "ingreso", amount: 4000000, description: "Nómina (Offline)", category: "Salario", account: "Bancolombia (Offline)", date: "2025-09-15"}],
-        status: "offline"
-    };
-    updateInterface(fallbackData);
-    initializeChart(fallbackData.transactions);
-}
-
-function initializeCategories() {
-    const container = document.getElementById('categoryContainer');
-    container.innerHTML = '';
-    Object.keys(categories[currentTransactionType]).forEach(category => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'category-btn';
-        button.textContent = category;
-        button.addEventListener('click', () => selectCategory(category));
-        container.appendChild(button);
-    });
-}
-
-function selectCategory(category) {
-    document.querySelectorAll('.category-btn.selected').forEach(btn => btn.classList.remove('selected'));
-    const selectedBtn = Array.from(document.querySelectorAll('.category-btn')).find(btn => btn.textContent === category);
-    if (selectedBtn) selectedBtn.classList.add('selected');
-
-    const subcategoryGroup = document.getElementById('subcategoryGroup');
-    const subcategoryContainer = document.getElementById('subcategoryContainer');
-    const subcats = categories[currentTransactionType][category];
-    
-    if (subcats && subcats.length > 0) {
-        subcategoryGroup.style.display = 'block';
-        subcategoryContainer.innerHTML = '';
-        subcats.forEach(subcat => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'subcategory-btn';
-            button.textContent = subcat;
-            button.addEventListener('click', () => {
-                document.querySelectorAll('.subcategory-btn.selected').forEach(btn => {
-                    btn.classList.remove('selected');
-                });
-                button.classList.add('selected');
-            });
-            subcategoryContainer.appendChild(button);
-        });
-    } else {
-        subcategoryGroup.style.display = 'none';
-        subcategoryContainer.innerHTML = '';
-    }
-}
-
-function setupTransactionTypeButtons() {
-    document.querySelectorAll('.transaction-type-buttons .btn').forEach(button => {
-        button.addEventListener('click', function() {
-            document.querySelectorAll('.transaction-type-buttons .btn').forEach(btn => btn.classList.remove('active'));
-            this.classList.add('active');
-            currentTransactionType = this.dataset.type;
-            initializeCategories();
-            document.getElementById('subcategoryGroup').style.display = 'none';
-        });
-    });
-}
-
-function setupFormHandlers() {
-    document.getElementById('transactionForm').addEventListener('submit', e => { e.preventDefault(); addTransaction(); });
-    document.getElementById('accountForm').addEventListener('submit', e => { e.preventDefault(); addAccount(); });
-    document.getElementById('obligationForm').addEventListener('submit', e => { e.preventDefault(); addObligation(); });
 }
 
 function initializeApp() {
@@ -598,12 +439,120 @@ function initializeApp() {
     console.log('Aplicación inicializada.');
 }
 
-document.addEventListener('DOMContentLoaded', initializeApp);
+// --- Resto de funciones auxiliares (sin cambios) ---
 
+function initializeChart(transactions) {
+    const ctx = document.getElementById('monthlyChart').getContext('2d');
+    if (!ctx) return;
+    if (monthlyChart) monthlyChart.destroy();
+    const months = [];
+    const incomeData = [];
+    const expensesData = [];
+    const currentDate = new Date();
+    for (let i = 5; i >= 0; i--) {
+        const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+        months.push(date.toLocaleDateString('es-CO', { month: 'short', year: 'numeric' }));
+        let monthlyIncome = 0;
+        let monthlyExpenses = 0;
+        if (transactions && Array.isArray(transactions)) {
+            transactions.forEach(t => {
+                const tDate = new Date(t.date);
+                if (tDate.getMonth() === date.getMonth() && tDate.getFullYear() === date.getFullYear()) {
+                    const amount = parseFloat(t.amount) || 0;
+                    if (t.type === 'ingreso') monthlyIncome += amount;
+                    else if (t.type === 'gasto') monthlyExpenses += amount;
+                }
+            });
+        }
+        incomeData.push(monthlyIncome);
+        expensesData.push(monthlyExpenses);
+    }
+    monthlyChart = new Chart(ctx, {
+        type: 'line', data: { labels: months, datasets: [ { label: 'Ingresos', data: incomeData, borderColor: '#4CAF50', backgroundColor: 'rgba(76, 175, 80, 0.1)', tension: 0.3, fill: true }, { label: 'Gastos', data: expensesData, borderColor: '#FF7043', backgroundColor: 'rgba(255, 112, 67, 0.1)', tension: 0.3, fill: true } ] }, options: { responsive: true, plugins: { title: { display: true, text: 'Comportamiento Financiero últimos 6 meses' } }, scales: { y: { beginAtZero: true, ticks: { callback: (value) => '$' + value.toLocaleString('es-CO') } } } }
+    });
+}
+function updateAccountDropdowns(accounts, obligations) {
+    const accountDropdown = document.getElementById('account');
+    const transferFrom = document.getElementById('transferFrom');
+    const transferTo = document.getElementById('transferTo');
+    [accountDropdown, transferFrom, transferTo].forEach(dd => dd.innerHTML = '<option value="">Seleccionar...</option>');
+    if (accounts) accounts.forEach(acc => { [accountDropdown, transferFrom].forEach(dd => dd.add(new Option(acc.name, acc.name))); });
+    if (obligations) obligations.forEach(obl => { [accountDropdown, transferTo].forEach(dd => dd.add(new Option(obl.name, obl.name))); });
+}
+function formatCurrency(amount) { return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(parseFloat(amount) || 0); }
+function formatDate(dateString) { try { const date = new Date(dateString); const userTimezoneOffset = date.getTimezoneOffset() * 60000; return new Date(date.getTime() + userTimezoneOffset).toLocaleDateString('es-CO', {day:'2-digit', month: '2-digit', year:'numeric'}); } catch { return dateString; } }
+function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text || ''; return div.innerHTML; }
+function showLoadingState() { document.getElementById('loadingOverlay').style.display = 'flex'; }
+function hideLoadingState() { document.getElementById('loadingOverlay').style.display = 'none'; }
+function showOfflineMode() { document.getElementById('offlineMode').style.display = 'block'; }
+function hideOfflineMode() { document.getElementById('offlineMode').style.display = 'none'; }
+function retryLoadData() { loadFinancialData(); }
+function loadFallbackData() {
+    const fallbackData = { accounts: [{name: "Bancolombia (Offline)", initialBalance: 5000000, date: "2025-09-15"}], obligations: [{id: "obl_1", name: "Visa (Offline)", type: "Tarjeta de Crédito", limit: 10000000, paymentDay: 15}], transactions: [{type: "ingreso", amount: 4000000, description: "Nómina (Offline)", category: "Salario", account: "Bancolombia (Offline)", date: "2025-09-15"}], status: "offline" };
+    updateInterface(fallbackData);
+    initializeChart(fallbackData.transactions);
+}
+function initializeCategories() {
+    const container = document.getElementById('categoryContainer');
+    container.innerHTML = '';
+    Object.keys(categories[currentTransactionType]).forEach(category => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'category-btn';
+        button.textContent = category;
+        button.addEventListener('click', () => selectCategory(category));
+        container.appendChild(button);
+    });
+}
+function selectCategory(category) {
+    document.querySelectorAll('.category-btn.selected').forEach(btn => btn.classList.remove('selected'));
+    const selectedBtn = Array.from(document.querySelectorAll('.category-btn')).find(btn => btn.textContent === category);
+    if (selectedBtn) selectedBtn.classList.add('selected');
+    const subcategoryGroup = document.getElementById('subcategoryGroup');
+    const subcategoryContainer = document.getElementById('subcategoryContainer');
+    const subcats = categories[currentTransactionType][category];
+    if (subcats && subcats.length > 0) {
+        subcategoryGroup.style.display = 'block';
+        subcategoryContainer.innerHTML = '';
+        subcats.forEach(subcat => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'subcategory-btn';
+            button.textContent = subcat;
+            button.addEventListener('click', () => {
+                document.querySelectorAll('.subcategory-btn.selected').forEach(btn => btn.classList.remove('selected'));
+                button.classList.add('selected');
+            });
+            subcategoryContainer.appendChild(button);
+        });
+    } else {
+        subcategoryGroup.style.display = 'none';
+        subcategoryContainer.innerHTML = '';
+    }
+}
+function setupTransactionTypeButtons() {
+    document.querySelectorAll('.transaction-type-buttons .btn').forEach(button => {
+        button.addEventListener('click', function() {
+            document.querySelectorAll('.transaction-type-buttons .btn').forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+            currentTransactionType = this.dataset.type;
+            initializeCategories();
+            document.getElementById('subcategoryGroup').style.display = 'none';
+        });
+    });
+}
+function setupFormHandlers() {
+    document.getElementById('transactionForm').addEventListener('submit', e => { e.preventDefault(); addTransaction(); });
+    document.getElementById('accountForm').addEventListener('submit', e => { e.preventDefault(); addAccount(); });
+    document.getElementById('obligationForm').addEventListener('submit', e => { e.preventDefault(); addObligation(); });
+}
 function setMonthlyBudget() { const budget = prompt('Ingresa tu presupuesto mensual:'); if (budget !== null && !isNaN(parseFloat(budget))) alert(`Presupuesto mensual: ${formatCurrency(budget)}`); }
 function generateReport() { alert('Función de generar reporte en desarrollo.'); }
 function exportData() { alert('Función de exportar datos en desarrollo.'); }
 function clearAllData() { if (confirm('¿Seguro que quieres eliminar todos los datos?')) alert('Función de limpiar datos en desarrollo.'); }
+
+document.addEventListener('DOMContentLoaded', initializeApp);
+
 </script>
 </body>
 </html>
