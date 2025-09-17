@@ -229,6 +229,7 @@ function showLoadingIndicatorsInLists() {
 
 function updateInterface(data) {
     const totals = calculateTotals(data.accounts, data.transactions);
+    // CORRECCIÓN: El nombre de la función estaba mal escrito (B mayúscula).
     updateBalanceCards(totals);
     updateAccountsList(data.accounts, data.transactions);
     updateObligationsList(data.obligations, data.transactions);
