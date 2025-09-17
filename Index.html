@@ -179,10 +179,13 @@ const categories = {
     }
 };
 
-async function sendDataToSheet(action, data) {
-    if (isLoading) return;
-    isLoading = true;
-    showLoadingState();
+// MEJORA: La función ahora puede controlar si debe recargar la UI o no.
+async function sendDataToSheet(action, data, shouldReload = true) {
+    // No mostramos el spinner para envíos intermedios.
+    if (shouldReload) {
+        isLoading = true;
+        showLoadingState();
+    }
     try {
         const response = await fetch(APPS_SCRIPT_URL, {
             method: 'POST',
@@ -193,18 +196,21 @@ async function sendDataToSheet(action, data) {
         if (!response.ok) throw new Error('La respuesta del servidor no fue exitosa.');
         const result = await response.json();
 
-        if (result.status === 'success') {
+        if (result.status === 'success' && shouldReload) {
             console.log(`Acción '${action}' completada. Recargando datos...`);
-            setTimeout(() => { loadFinancialData(); }, 500);
-        } else {
+            // Dejamos un pequeño margen para que Google Sheets procese el guardado.
+            setTimeout(() => { loadFinancialData(); }, 1000); // Aumentado a 1 segundo para mayor seguridad.
+        } else if (result.status !== 'success') {
             throw new Error(result.message || 'El servidor reportó un error.');
         }
 
     } catch (error) {
         console.error('Error al enviar datos:', error);
         alert(`Hubo un error al guardar o refrescar los datos: ${error.message}`);
-        isLoading = false;
-        hideLoadingState();
+        if (shouldReload) {
+            isLoading = false;
+            hideLoadingState();
+        }
     }
 }
 
@@ -291,10 +297,7 @@ function calculateTotals(accounts = [], transactions = []) {
 function updateAccountsList(accounts = [], transactions = []) {
     const container = document.getElementById('accountList');
     container.innerHTML = '';
-    if (accounts.length === 0) {
-        container.innerHTML = '<li class="account-item">No hay cuentas registradas.</li>';
-        return;
-    }
+    if (accounts.length === 0) { container.innerHTML = '<li class="account-item">No hay cuentas registradas.</li>'; return; }
     accounts.forEach(account => {
         let currentBalance = parseFloat(account.initialBalance) || 0;
         transactions.forEach(t => {
@@ -305,12 +308,7 @@ function updateAccountsList(accounts = [], transactions = []) {
         });
         const item = document.createElement('li');
         item.className = 'account-item';
-        item.innerHTML = `
-            <div class="account-info">
-                <h4 class="account-name">${escapeHtml(account.name)}</h4>
-                <p>Saldo actual</p>
-            </div>
-            <div class="account-balance ${currentBalance < 0 ? 'amount-debt' : ''}">${formatCurrency(currentBalance)}</div>`;
+        item.innerHTML = `<div class="account-info"><h4 class="account-name">${escapeHtml(account.name)}</h4><p>Saldo actual</p></div><div class="account-balance ${currentBalance < 0 ? 'amount-debt' : ''}">${formatCurrency(currentBalance)}</div>`;
         container.appendChild(item);
     });
 }
@@ -318,10 +316,7 @@ function updateAccountsList(accounts = [], transactions = []) {
 function updateObligationsList(obligations = [], transactions = []) {
     const container = document.getElementById('obligationList');
     container.innerHTML = '';
-    if (obligations.length === 0) {
-        container.innerHTML = '<li class="account-item">No hay obligaciones registradas.</li>';
-        return;
-    }
+    if (obligations.length === 0) { container.innerHTML = '<li class="account-item">No hay obligaciones registradas.</li>'; return; }
     obligations.forEach(obligation => {
         let debt = 0;
         transactions.forEach(t => {
@@ -332,40 +327,21 @@ function updateObligationsList(obligations = [], transactions = []) {
         });
         const item = document.createElement('li');
         item.className = 'account-item';
-        item.innerHTML = `
-            <div class="account-info">
-                <h4 class="account-name">${escapeHtml(obligation.name)}</h4>
-                <p>Límite: ${formatCurrency(obligation.limit)}</p>
-            </div>
-            <div class="account-balance">
-                <span class="amount-debt" style="font-size: 1rem; display: block;">Deuda: ${formatCurrency(debt)}</span>
-            </div>`;
+        item.innerHTML = `<div class="account-info"><h4 class="account-name">${escapeHtml(obligation.name)}</h4><p>Límite: ${formatCurrency(obligation.limit)}</p></div><div class="account-balance"><span class="amount-debt" style="font-size: 1rem; display: block;">Deuda: ${formatCurrency(debt)}</span></div>`;
         container.appendChild(item);
     });
 }
 
-// ESTA ES LA FUNCIÓN QUE FALTABA Y CAUSÓ EL ERROR ANTERIOR
 function updateRecentTransactions(transactions = []) {
     const container = document.getElementById('transactionList');
     container.innerHTML = '';
-    if (transactions.length === 0) {
-        container.innerHTML = '<li class="transaction-item">No hay transacciones registradas.</li>';
-        return;
-    }
+    if (transactions.length === 0) { container.innerHTML = '<li class="transaction-item">No hay transacciones registradas.</li>'; return; }
     const sorted = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
     sorted.slice(0, 10).forEach(transaction => {
         const amount = parseFloat(transaction.amount) || 0;
         const item = document.createElement('li');
         item.className = `transaction-item ${transaction.type === 'ingreso' ? 'income' : 'expense'}`;
-        item.innerHTML = `
-            <div class="transaction-info">
-                <h4>${escapeHtml(transaction.description)}</h4>
-                <p>${escapeHtml(transaction.category)} ${transaction.subcategory ? '- ' + escapeHtml(transaction.subcategory) : ''} | ${escapeHtml(transaction.account)}</p>
-                <small>${formatDate(transaction.date)}</small>
-            </div>
-            <div class="transaction-amount ${transaction.type === 'ingreso' ? 'amount-income' : 'amount-expense'}">
-                ${transaction.type === 'ingreso' ? '+' : '-'}${formatCurrency(Math.abs(amount))}
-            </div>`;
+        item.innerHTML = `<div class="transaction-info"><h4>${escapeHtml(transaction.description)}</h4><p>${escapeHtml(transaction.category)} ${transaction.subcategory ? '- ' + escapeHtml(transaction.subcategory) : ''} | ${escapeHtml(transaction.account)}</p><small>${formatDate(transaction.date)}</small></div><div class="transaction-amount ${transaction.type === 'ingreso' ? 'amount-income' : 'amount-expense'}">${transaction.type === 'ingreso' ? '+' : '-'}${formatCurrency(Math.abs(amount))}</div>`;
         container.appendChild(item);
     });
 }
@@ -374,11 +350,9 @@ function selectCategory(category) {
     document.querySelectorAll('.category-btn.selected').forEach(btn => btn.classList.remove('selected'));
     const selectedBtn = Array.from(document.querySelectorAll('.category-btn')).find(btn => btn.textContent === category);
     if (selectedBtn) selectedBtn.classList.add('selected');
-
     const subcategoryGroup = document.getElementById('subcategoryGroup');
     const subcategoryContainer = document.getElementById('subcategoryContainer');
     const subcats = categories[currentTransactionType][category];
-    
     if (subcats && subcats.length > 0) {
         subcategoryGroup.style.display = 'block';
         subcategoryContainer.innerHTML = '';
@@ -404,7 +378,8 @@ function selectCategory(category) {
     }
 }
 
-function addTransaction() {
+// MEJORA: Lógica de envío secuencial y segura para los pagos de tarjeta.
+async function addTransaction() {
     const date = document.getElementById('date').value;
     const amount = parseFloat(document.getElementById('amount').value);
 
@@ -414,10 +389,15 @@ function addTransaction() {
         if (!amount || amount <= 0 || !transferFrom || !transferTo || !date) {
             alert('Para un pago, selecciona las cuentas de origen y destino, y un monto válido.'); return;
         }
+        
+        isLoading = true;
+        showLoadingState();
+
         const expenseTransaction = { type: 'gasto', amount: amount, description: `Pago a ${transferTo}`, category: 'Créditos', subcategory: 'Pago Tarjeta', account: transferFrom, date: date, EsTransferencia: 'sí' };
-        sendDataToSheet('addTransaction', expenseTransaction);
+        await sendDataToSheet('addTransaction', expenseTransaction, false); // Envía sin recargar
+
         const incomeTransaction = { type: 'ingreso', amount: amount, description: `Abono desde ${transferFrom}`, category: 'Créditos', subcategory: 'Pago Tarjeta', account: transferTo, date: date, EsTransferencia: 'sí' };
-        setTimeout(() => sendDataToSheet('addTransaction', incomeTransaction), 250);
+        await sendDataToSheet('addTransaction', incomeTransaction, true); // Envía Y AHORA SÍ recarga
     } else {
         const description = document.getElementById('description').value;
         const account = document.getElementById('account').value;
@@ -428,7 +408,6 @@ function addTransaction() {
         const transaction = { type: currentTransactionType, amount, description, category, subcategory, account, date, EsTransferencia: '' };
         sendDataToSheet('addTransaction', transaction);
     }
-
     document.getElementById('transactionForm').reset();
     document.getElementById('date').valueAsDate = new Date();
     document.getElementById('subcategoryGroup').style.display = 'none';
