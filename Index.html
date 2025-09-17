@@ -194,7 +194,8 @@ async function sendDataToSheet(action, data) {
 
         if (result.status === 'success') {
             console.log(`Acción '${action}' completada. Recargando datos...`);
-            await loadFinancialData();
+            // Dejamos un pequeño margen para que Google Sheets procese el guardado
+            setTimeout(() => { loadFinancialData(); }, 500);
         } else {
             throw new Error(result.message || 'El servidor reportó un error.');
         }
@@ -202,14 +203,12 @@ async function sendDataToSheet(action, data) {
     } catch (error) {
         console.error('Error al enviar datos:', error);
         alert(`Hubo un error al guardar o refrescar los datos: ${error.message}`);
-    } finally {
         isLoading = false;
-        hideLoadingState(); 
+        hideLoadingState();
     }
 }
 
 async function loadFinancialData() {
-    if (isLoading) return;
     isLoading = true;
     console.log('Cargando datos financieros...');
     try {
@@ -247,7 +246,6 @@ function showLoadingIndicatorsInLists() {
 }
 
 function updateInterface(data) {
-    // MEJORA: Pasamos todas las transacciones a las funciones que las necesitan.
     const totals = calculateTotals(data.accounts, data.transactions);
     updateBalanceCards(totals);
     updateAccountsList(data.accounts, data.transactions);
@@ -256,48 +254,41 @@ function updateInterface(data) {
     updateAccountDropdowns(data.accounts, data.obligations);
 }
 
-// MEJORA: La función ahora calcula los saldos REALES de las cuentas.
 function calculateTotals(accounts = [], transactions = []) {
     let totalBalance = 0;
     let monthlyIncome = 0;
     let monthlyExpenses = 0;
     
-    // 1. Calculamos el saldo actual de cada cuenta de débito (dinero que tienes).
     accounts.forEach(account => {
         let currentAccountBalance = parseFloat(account.initialBalance) || 0;
         transactions.forEach(transaction => {
             if (transaction.account === account.name) {
-                if (transaction.type === 'ingreso') {
-                    currentAccountBalance += parseFloat(transaction.amount) || 0;
-                } else if (transaction.type === 'gasto') {
-                    currentAccountBalance -= parseFloat(transaction.amount) || 0;
-                }
+                if (transaction.type === 'ingreso') currentAccountBalance += parseFloat(transaction.amount) || 0;
+                else if (transaction.type === 'gasto') currentAccountBalance -= parseFloat(transaction.amount) || 0;
             }
         });
         totalBalance += currentAccountBalance;
     });
 
-    // 2. Calculamos los ingresos y gastos solo del mes actual para las tarjetas superiores.
     const currentDate = new Date();
     const currentMonth = currentDate.getMonth();
     const currentYear = currentDate.getFullYear();
     transactions.forEach(transaction => {
+        // Excluimos los pagos de tarjeta de los totales de "Gastos del Mes" para no contarlos dos veces
+        if (transaction.category === 'Créditos' && transaction.subcategory === 'Pago Tarjeta') return;
+
         const transactionDate = new Date(transaction.date);
         const adjustedDate = new Date(transactionDate.valueOf() + transactionDate.getTimezoneOffset() * 60 * 1000);
         if (adjustedDate.getMonth() === currentMonth && adjustedDate.getFullYear() === currentYear) {
             const amount = parseFloat(transaction.amount) || 0;
-            if (transaction.type === 'ingreso') {
-                monthlyIncome += amount;
-            } else if (transaction.type === 'gasto') {
-                monthlyExpenses += amount;
-            }
+            if (transaction.type === 'ingreso') monthlyIncome += amount;
+            else if (transaction.type === 'gasto') monthlyExpenses += amount;
         }
     });
 
     return { totalBalance, monthlyIncome, monthlyExpenses, remainingBudget: monthlyIncome - monthlyExpenses };
 }
 
-// MEJORA: Muestra el saldo ACTUAL de cada cuenta.
 function updateAccountsList(accounts = [], transactions = []) {
     const container = document.getElementById('accountList');
     container.innerHTML = '';
@@ -305,7 +296,6 @@ function updateAccountsList(accounts = [], transactions = []) {
         container.innerHTML = '<li class="account-item">No hay cuentas registradas.</li>';
         return;
     }
-
     accounts.forEach(account => {
         let currentBalance = parseFloat(account.initialBalance) || 0;
         transactions.forEach(t => {
@@ -314,7 +304,6 @@ function updateAccountsList(accounts = [], transactions = []) {
                 else if (t.type === 'gasto') currentBalance -= parseFloat(t.amount) || 0;
             }
         });
-
         const item = document.createElement('li');
         item.className = 'account-item';
         item.innerHTML = `
@@ -327,7 +316,7 @@ function updateAccountsList(accounts = [], transactions = []) {
     });
 }
 
-// MEJORA: Muestra la deuda ACTUAL de cada tarjeta de crédito.
+// MEJORA: Muestra la deuda debajo del límite y la calcula restando los abonos.
 function updateObligationsList(obligations = [], transactions = []) {
     const container = document.getElementById('obligationList');
     container.innerHTML = '';
@@ -337,10 +326,13 @@ function updateObligationsList(obligations = [], transactions = []) {
     }
 
     obligations.forEach(obligation => {
-        let currentDebt = 0;
+        let debt = 0;
         transactions.forEach(t => {
-            if (t.type === 'gasto' && t.account === obligation.name) {
-                currentDebt += parseFloat(t.amount) || 0;
+            if (t.account === obligation.name) {
+                // Los gastos en la tarjeta AUMENTAN la deuda
+                if (t.type === 'gasto') debt += parseFloat(t.amount) || 0;
+                // Los ingresos (abonos) en la tarjeta DISMINUYEN la deuda
+                else if (t.type === 'ingreso') debt -= parseFloat(t.amount) || 0;
             }
         });
 
@@ -351,62 +343,107 @@ function updateObligationsList(obligations = [], transactions = []) {
                 <h4 class="account-name">${escapeHtml(obligation.name)}</h4>
                 <p>Límite: ${formatCurrency(obligation.limit)}</p>
             </div>
-            <div class="account-balance amount-debt">Deuda: ${formatCurrency(currentDebt)}</div>`;
-        container.appendChild(item);
-    });
-}
-
-function updateBalanceCards(totals) {
-    document.getElementById('totalIncome').textContent = formatCurrency(totals.monthlyIncome);
-    document.getElementById('totalExpenses').textContent = formatCurrency(totals.monthlyExpenses);
-    document.getElementById('currentBalance').textContent = formatCurrency(totals.totalBalance);
-    document.getElementById('remainingBudget').textContent = formatCurrency(totals.remainingBudget);
-}
-
-function updateRecentTransactions(transactions = []) {
-    const container = document.getElementById('transactionList');
-    container.innerHTML = '';
-    if (transactions.length === 0) {
-        container.innerHTML = '<li class="transaction-item">No hay transacciones registradas.</li>';
-        return;
-    }
-    const sorted = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
-    sorted.slice(0, 10).forEach(transaction => {
-        const amount = parseFloat(transaction.amount) || 0;
-        const item = document.createElement('li');
-        item.className = `transaction-item ${transaction.type === 'ingreso' ? 'income' : 'expense'}`;
-        item.innerHTML = `
-            <div class="transaction-info">
-                <h4>${escapeHtml(transaction.description)}</h4>
-                <p>${escapeHtml(transaction.category)} ${transaction.subcategory ? '- ' + escapeHtml(transaction.subcategory) : ''} | ${escapeHtml(transaction.account)}</p>
-                <small>${formatDate(transaction.date)}</small>
-            </div>
-            <div class="transaction-amount ${transaction.type === 'ingreso' ? 'amount-income' : 'amount-expense'}">
-                ${transaction.type === 'ingreso' ? '+' : '-'}${formatCurrency(Math.abs(amount))}
+            <div class="account-balance">
+                <span class="amount-debt" style="font-size: 1rem; display: block;">Deuda: ${formatCurrency(debt)}</span>
             </div>`;
         container.appendChild(item);
     });
 }
 
-function addTransaction() {
-    const amount = parseFloat(document.getElementById('amount').value);
-    const description = document.getElementById('description').value;
-    const account = document.getElementById('account').value;
-    const date = document.getElementById('date').value;
+// MEJORA: Habilita el formulario de transferencia para 'Pago Tarjeta'.
+function selectCategory(category) {
+    document.querySelectorAll('.category-btn.selected').forEach(btn => btn.classList.remove('selected'));
+    const selectedBtn = Array.from(document.querySelectorAll('.category-btn')).find(btn => btn.textContent === category);
+    if (selectedBtn) selectedBtn.classList.add('selected');
+
+    const subcategoryGroup = document.getElementById('subcategoryGroup');
+    const subcategoryContainer = document.getElementById('subcategoryContainer');
+    const subcats = categories[currentTransactionType][category];
     
-    if (!amount || amount <= 0 || !description || !account || !date) { alert('Por favor, completa todos los campos.'); return; }
-    const category = document.querySelector('.category-btn.selected')?.textContent || '';
-    if (!category) { alert('Por favor selecciona una categoría'); return; }
-    const subcategory = document.querySelector('.subcategory-btn.selected')?.textContent || '';
-    const transaction = {
-        type: currentTransactionType, amount, description, category, subcategory, account, date,
-        EsTransferencia: document.getElementById('transfer-form-fields').style.display === 'block' ? 'sí' : ''
-    };
-    sendDataToSheet('addTransaction', transaction);
+    if (subcats && subcats.length > 0) {
+        subcategoryGroup.style.display = 'block';
+        subcategoryContainer.innerHTML = '';
+        subcats.forEach(subcat => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'subcategory-btn';
+            button.textContent = subcat;
+            button.addEventListener('click', () => {
+                document.querySelectorAll('.subcategory-btn.selected').forEach(btn => btn.classList.remove('selected'));
+                button.classList.add('selected');
+
+                // Lógica para mostrar/ocultar campos de transferencia
+                const isPayment = category === 'Créditos' && subcat === 'Pago Tarjeta';
+                document.getElementById('standard-form-fields').style.display = isPayment ? 'none' : 'block';
+                document.getElementById('transfer-form-fields').style.display = isPayment ? 'block' : 'none';
+            });
+            subcategoryContainer.appendChild(button);
+        });
+    } else {
+        subcategoryGroup.style.display = 'none';
+        subcategoryContainer.innerHTML = '';
+        // Si no hay subcategorías, asegurar que los campos estándar sean visibles
+        document.getElementById('standard-form-fields').style.display = 'block';
+        document.getElementById('transfer-form-fields').style.display = 'none';
+    }
+}
+
+// MEJORA: Lógica para crear dos transacciones para un pago de tarjeta.
+function addTransaction() {
+    const date = document.getElementById('date').value;
+    const amount = parseFloat(document.getElementById('amount').value);
+
+    // Si es un Pago de Tarjeta, usa la lógica de transferencia
+    if (document.getElementById('transfer-form-fields').style.display === 'block') {
+        const transferFrom = document.getElementById('transferFrom').value;
+        const transferTo = document.getElementById('transferTo').value;
+
+        if (!amount || amount <= 0 || !transferFrom || !transferTo || !date) {
+            alert('Para un pago, selecciona las cuentas de origen y destino, y un monto válido.');
+            return;
+        }
+
+        // 1. Gasto desde la cuenta de origen
+        const expenseTransaction = {
+            type: 'gasto', amount: amount, description: `Pago a ${transferTo}`,
+            category: 'Créditos', subcategory: 'Pago Tarjeta', account: transferFrom, date: date,
+            EsTransferencia: 'sí'
+        };
+        sendDataToSheet('addTransaction', expenseTransaction);
+
+        // 2. Ingreso (abono) a la tarjeta de destino
+        const incomeTransaction = {
+            type: 'ingreso', amount: amount, description: `Abono desde ${transferFrom}`,
+            category: 'Créditos', subcategory: 'Pago Tarjeta', account: transferTo, date: date,
+            EsTransferencia: 'sí'
+        };
+        // Se envía el segundo registro un poco después para asegurar el guardado
+        setTimeout(() => sendDataToSheet('addTransaction', incomeTransaction), 250);
+
+    } else { // Lógica para transacciones normales
+        const description = document.getElementById('description').value;
+        const account = document.getElementById('account').value;
+        if (!amount || amount <= 0 || !description || !account || !date) { alert('Por favor, completa todos los campos.'); return; }
+        
+        const category = document.querySelector('.category-btn.selected')?.textContent || '';
+        if (!category) { alert('Por favor selecciona una categoría'); return; }
+        
+        const subcategory = document.querySelector('.subcategory-btn.selected')?.textContent || '';
+        
+        const transaction = {
+            type: currentTransactionType, amount, description, category, subcategory, account, date,
+            EsTransferencia: ''
+        };
+        sendDataToSheet('addTransaction', transaction);
+    }
+
+    // Limpiar y resetear el formulario
     document.getElementById('transactionForm').reset();
     document.getElementById('date').valueAsDate = new Date();
     document.getElementById('subcategoryGroup').style.display = 'none';
     document.querySelectorAll('.selected').forEach(btn => btn.classList.remove('selected'));
+    document.getElementById('standard-form-fields').style.display = 'block';
+    document.getElementById('transfer-form-fields').style.display = 'none';
 }
 
 function addAccount() {
@@ -441,21 +478,18 @@ function initializeApp() {
 
 // --- Resto de funciones auxiliares (sin cambios) ---
 
+function updateBalanceCards(totals) { document.getElementById('totalIncome').textContent = formatCurrency(totals.monthlyIncome); document.getElementById('totalExpenses').textContent = formatCurrency(totals.monthlyExpenses); document.getElementById('currentBalance').textContent = formatCurrency(totals.totalBalance); document.getElementById('remainingBudget').textContent = formatCurrency(totals.remainingBudget); }
 function initializeChart(transactions) {
     const ctx = document.getElementById('monthlyChart').getContext('2d');
     if (!ctx) return;
-    if (monthlyChart) monthlyChart.destroy();
-    const months = [];
-    const incomeData = [];
-    const expensesData = [];
-    const currentDate = new Date();
+    if (monthlyChart) monthlyChart.destroy(); const months = []; const incomeData = []; const expensesData = []; const currentDate = new Date();
     for (let i = 5; i >= 0; i--) {
         const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
         months.push(date.toLocaleDateString('es-CO', { month: 'short', year: 'numeric' }));
-        let monthlyIncome = 0;
-        let monthlyExpenses = 0;
+        let monthlyIncome = 0, monthlyExpenses = 0;
         if (transactions && Array.isArray(transactions)) {
             transactions.forEach(t => {
+                if (t.category === 'Créditos' && t.subcategory === 'Pago Tarjeta') return;
                 const tDate = new Date(t.date);
                 if (tDate.getMonth() === date.getMonth() && tDate.getFullYear() === date.getFullYear()) {
                     const amount = parseFloat(t.amount) || 0;
@@ -464,17 +498,12 @@ function initializeChart(transactions) {
                 }
             });
         }
-        incomeData.push(monthlyIncome);
-        expensesData.push(monthlyExpenses);
+        incomeData.push(monthlyIncome); expensesData.push(monthlyExpenses);
     }
-    monthlyChart = new Chart(ctx, {
-        type: 'line', data: { labels: months, datasets: [ { label: 'Ingresos', data: incomeData, borderColor: '#4CAF50', backgroundColor: 'rgba(76, 175, 80, 0.1)', tension: 0.3, fill: true }, { label: 'Gastos', data: expensesData, borderColor: '#FF7043', backgroundColor: 'rgba(255, 112, 67, 0.1)', tension: 0.3, fill: true } ] }, options: { responsive: true, plugins: { title: { display: true, text: 'Comportamiento Financiero últimos 6 meses' } }, scales: { y: { beginAtZero: true, ticks: { callback: (value) => '$' + value.toLocaleString('es-CO') } } } }
-    });
+    monthlyChart = new Chart(ctx, { type: 'line', data: { labels: months, datasets: [ { label: 'Ingresos', data: incomeData, borderColor: '#4CAF50', backgroundColor: 'rgba(76, 175, 80, 0.1)', tension: 0.3, fill: true }, { label: 'Gastos', data: expensesData, borderColor: '#FF7043', backgroundColor: 'rgba(255, 112, 67, 0.1)', tension: 0.3, fill: true } ] }, options: { responsive: true, plugins: { title: { display: true, text: 'Comportamiento Financiero últimos 6 meses' } }, scales: { y: { beginAtZero: true, ticks: { callback: (value) => '$' + value.toLocaleString('es-CO') } } } } });
 }
 function updateAccountDropdowns(accounts, obligations) {
-    const accountDropdown = document.getElementById('account');
-    const transferFrom = document.getElementById('transferFrom');
-    const transferTo = document.getElementById('transferTo');
+    const accountDropdown = document.getElementById('account'); const transferFrom = document.getElementById('transferFrom'); const transferTo = document.getElementById('transferTo');
     [accountDropdown, transferFrom, transferTo].forEach(dd => dd.innerHTML = '<option value="">Seleccionar...</option>');
     if (accounts) accounts.forEach(acc => { [accountDropdown, transferFrom].forEach(dd => dd.add(new Option(acc.name, acc.name))); });
     if (obligations) obligations.forEach(obl => { [accountDropdown, transferTo].forEach(dd => dd.add(new Option(obl.name, obl.name))); });
@@ -489,55 +518,21 @@ function hideOfflineMode() { document.getElementById('offlineMode').style.displa
 function retryLoadData() { loadFinancialData(); }
 function loadFallbackData() {
     const fallbackData = { accounts: [{name: "Bancolombia (Offline)", initialBalance: 5000000, date: "2025-09-15"}], obligations: [{id: "obl_1", name: "Visa (Offline)", type: "Tarjeta de Crédito", limit: 10000000, paymentDay: 15}], transactions: [{type: "ingreso", amount: 4000000, description: "Nómina (Offline)", category: "Salario", account: "Bancolombia (Offline)", date: "2025-09-15"}], status: "offline" };
-    updateInterface(fallbackData);
-    initializeChart(fallbackData.transactions);
+    updateInterface(fallbackData); initializeChart(fallbackData.transactions);
 }
 function initializeCategories() {
-    const container = document.getElementById('categoryContainer');
-    container.innerHTML = '';
+    const container = document.getElementById('categoryContainer'); container.innerHTML = '';
     Object.keys(categories[currentTransactionType]).forEach(category => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'category-btn';
-        button.textContent = category;
-        button.addEventListener('click', () => selectCategory(category));
-        container.appendChild(button);
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'category-btn'; button.textContent = category;
+        button.addEventListener('click', () => selectCategory(category)); container.appendChild(button);
     });
-}
-function selectCategory(category) {
-    document.querySelectorAll('.category-btn.selected').forEach(btn => btn.classList.remove('selected'));
-    const selectedBtn = Array.from(document.querySelectorAll('.category-btn')).find(btn => btn.textContent === category);
-    if (selectedBtn) selectedBtn.classList.add('selected');
-    const subcategoryGroup = document.getElementById('subcategoryGroup');
-    const subcategoryContainer = document.getElementById('subcategoryContainer');
-    const subcats = categories[currentTransactionType][category];
-    if (subcats && subcats.length > 0) {
-        subcategoryGroup.style.display = 'block';
-        subcategoryContainer.innerHTML = '';
-        subcats.forEach(subcat => {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'subcategory-btn';
-            button.textContent = subcat;
-            button.addEventListener('click', () => {
-                document.querySelectorAll('.subcategory-btn.selected').forEach(btn => btn.classList.remove('selected'));
-                button.classList.add('selected');
-            });
-            subcategoryContainer.appendChild(button);
-        });
-    } else {
-        subcategoryGroup.style.display = 'none';
-        subcategoryContainer.innerHTML = '';
-    }
 }
 function setupTransactionTypeButtons() {
     document.querySelectorAll('.transaction-type-buttons .btn').forEach(button => {
         button.addEventListener('click', function() {
-            document.querySelectorAll('.transaction-type-buttons .btn').forEach(btn => btn.classList.remove('active'));
-            this.classList.add('active');
-            currentTransactionType = this.dataset.type;
-            initializeCategories();
-            document.getElementById('subcategoryGroup').style.display = 'none';
+            document.querySelectorAll('.transaction-type-buttons .btn').forEach(btn => btn.classList.remove('active')); this.classList.add('active');
+            currentTransactionType = this.dataset.type; initializeCategories(); document.getElementById('subcategoryGroup').style.display = 'none';
+            document.getElementById('standard-form-fields').style.display = 'block'; document.getElementById('transfer-form-fields').style.display = 'none';
         });
     });
 }
@@ -550,9 +545,7 @@ function setMonthlyBudget() { const budget = prompt('Ingresa tu presupuesto mens
 function generateReport() { alert('Función de generar reporte en desarrollo.'); }
 function exportData() { alert('Función de exportar datos en desarrollo.'); }
 function clearAllData() { if (confirm('¿Seguro que quieres eliminar todos los datos?')) alert('Función de limpiar datos en desarrollo.'); }
-
 document.addEventListener('DOMContentLoaded', initializeApp);
-
 </script>
 </body>
 </html>
