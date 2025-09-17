@@ -179,23 +179,42 @@ const categories = {
     }
 };
 
+// REEMPLAZA LA VERSIÓN ANTIGUA DE ESTA FUNCIÓN
 async function sendDataToSheet(action, data) {
     if (isLoading) return;
     isLoading = true;
     showLoadingState();
     try {
-        await fetch(APPS_SCRIPT_URL, {
+        // 1. Capturamos la respuesta del servidor después de enviar los datos (POST).
+        const response = await fetch(APPS_SCRIPT_URL, {
             method: 'POST',
             body: JSON.stringify({ action: action, data: data }),
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         });
-        console.log(`Acción '${action}' enviada. Recargando datos...`);
-        await loadFinancialData(); 
+
+        // 2. Verificamos que la respuesta sea válida y la convertimos a JSON.
+        if (!response.ok) {
+            throw new Error('La respuesta del servidor no fue exitosa.');
+        }
+        const result = await response.json();
+
+        // 3. Si el servidor nos confirma que todo se guardó ("status: success")...
+        if (result.status === 'success') {
+            console.log(`Acción '${action}' completada exitosamente. Recargando datos...`);
+            // ...entonces y solo entonces, pedimos los datos actualizados (GET).
+            await loadFinancialData();
+        } else {
+            // Si el servidor reportó un error, lo mostramos.
+            throw new Error(result.message || 'El servidor reportó un error desconocido.');
+        }
+
     } catch (error) {
         console.error('Error al enviar datos:', error);
-        alert(`Hubo un error al guardar los datos.`);
+        alert(`Hubo un error al guardar o refrescar los datos: ${error.message}`);
     } finally {
         isLoading = false;
+        // El hideLoadingState() ya es llamado por loadFinancialData, 
+        // pero lo dejamos aquí por si ocurre un error antes de esa llamada.
         hideLoadingState(); 
     }
 }
