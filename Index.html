@@ -190,12 +190,13 @@ async function sendDataToSheet(action, data) {
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         });
         console.log(`Acción '${action}' enviada. Recargando datos...`);
-        await loadFinancialData();
+        await loadFinancialData(); 
     } catch (error) {
         console.error('Error al enviar datos:', error);
         alert(`Hubo un error al guardar los datos.`);
     } finally {
         isLoading = false;
+        hideLoadingState(); 
     }
 }
 
@@ -205,8 +206,11 @@ async function loadFinancialData() {
     console.log('Cargando datos financieros...');
     try {
         showLoadingState();
+        showLoadingIndicatorsInLists();
+        
         const response = await fetch(APPS_SCRIPT_URL);
         if (!response.ok) throw new Error(`Error HTTP: ${response.status}`);
+        
         const data = await response.json();
         if (data.status === 'success') {
             financialData = data;
@@ -225,6 +229,19 @@ async function loadFinancialData() {
         isLoading = false;
         hideLoadingState();
     }
+}
+
+function showLoadingIndicatorsInLists() {
+    const loadingMessage = '<li class="account-item" style="justify-content: center;">Cargando...</li>';
+    
+    const accountList = document.getElementById('accountList');
+    if (accountList) accountList.innerHTML = loadingMessage;
+    
+    const obligationList = document.getElementById('obligationList');
+    if (obligationList) obligationList.innerHTML = loadingMessage;
+    
+    const transactionList = document.getElementById('transactionList');
+    if (transactionList) transactionList.innerHTML = '<div class="transaction-item" style="justify-content: center;">Cargando...</div>';
 }
 
 function initializeChart(transactions) {
@@ -350,7 +367,7 @@ function updateObligationsList(obligations) {
         item.innerHTML = `
             <div class="account-info">
                 <h4 class="account-name">${escapeHtml(obligation.name)}</h4>
-                <p>${obligation.type} - Día de pago: ${obligation.paymentDay}</p>
+                <p>${escapeHtml(obligation.type)} - Día de pago: ${obligation.paymentDay}</p>
             </div>
             <div class="account-balance">${formatCurrency(obligation.limit)}</div>`;
         container.appendChild(item);
@@ -368,7 +385,7 @@ function updateRecentTransactions(transactions) {
     sorted.slice(0, 10).forEach(transaction => {
         const amount = parseFloat(transaction.amount) || 0;
         const item = document.createElement('li');
-        item.className = `transaction-item ${transaction.type}`;
+        item.className = `transaction-item ${transaction.type === 'ingreso' ? 'income' : 'expense'}`;
         item.innerHTML = `
             <div class="transaction-info">
                 <h4>${escapeHtml(transaction.description)}</h4>
@@ -445,7 +462,7 @@ function addObligation() {
 }
 
 function formatCurrency(amount) { return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(parseFloat(amount) || 0); }
-function formatDate(dateString) { try { return new Date(dateString).toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' }); } catch { return dateString; } }
+function formatDate(dateString) { try { const date = new Date(dateString); const userTimezoneOffset = date.getTimezoneOffset() * 60000; return new Date(date.getTime() + userTimezoneOffset).toLocaleDateString('es-CO', {day:'2-digit', month: '2-digit', year:'numeric'}); } catch { return dateString; } }
 function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text || ''; return div.innerHTML; }
 function showLoadingState() { document.getElementById('loadingOverlay').style.display = 'flex'; }
 function hideLoadingState() { document.getElementById('loadingOverlay').style.display = 'none'; }
@@ -495,7 +512,9 @@ function selectCategory(category) {
             button.className = 'subcategory-btn';
             button.textContent = subcat;
             button.addEventListener('click', () => {
-                document.querySelectorAll('.subcategory-btn.selected').forEach(btn => btn.classList.remove('selected'));
+                document.querySelectorAll('.subcategory-btn.selected').forEach(btn => {
+                    btn.classList.remove('selected');
+                });
                 button.classList.add('selected');
             });
             subcategoryContainer.appendChild(button);
